@@ -6,7 +6,8 @@
 ========================================
 Módulo  : embelleze-dashboard
 Função  : Fila de contatos para o dono
-Deploy  : Railway — ghcr.io/neomello/embelleze-dashboard
+Repo    : github.com/emb-trind/embelleze-dashboard
+Deploy  : Railway — build direto do repo via Dockerfile
 ========================================
 ```
 
@@ -181,14 +182,12 @@ make clean     # remove dist/ e .astro/
 ## ◬ Deploy
 
 ```text
-Pipeline: push main → GitHub Actions → GHCR → Railway
+Pipeline: push main → Railway detecta → build via Dockerfile
 
-Image: ghcr.io/neomello/embelleze-dashboard:latest
-Workflow: .github/workflows/docker-push-dashboard.yml
-Trigger: alterações em embelleze-dashboard/**
+Repo: github.com/emb-trind/embelleze-dashboard
+Railway: conecta direto ao repo, sem GitHub Actions, sem GHCR
 
-Docker context: ./embelleze-dashboard (somente este módulo)
-O Dockerfile não depende do workspace raiz:
+O Dockerfile é autossuficiente:
 └─ .npmrc próprio → only-built-dependencies[]=esbuild
 └─ pnpm install direto, sem --filter, sem workspace
 └─ .dockerignore exclui node_modules, dist, .astro
