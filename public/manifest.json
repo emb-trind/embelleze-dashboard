@@ -1,0 +1,30 @@
+{
+  "name": "Embelleze · Painel de Gestão",
+  "short_name": "Painel",
+  "description": "Painel interno do Instituto Embelleze Trindade — acesso restrito",
+  "version": "1.0.0",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#eef1f8",
+  "theme_color": "#5f3080",
+  "lang": "pt-BR",
+  "categories": ["business", "productivity"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/brand/avatar_e-trindade.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/brand/avatar_e-trindade.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": []
+}

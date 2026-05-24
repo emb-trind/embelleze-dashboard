@@ -1,0 +1,442 @@
+---
+import { fetchLeads, countByStatus } from '../lib/db';
+
+const filterStatus = Astro.url.searchParams.get('status') ?? '';
+const leads = await fetchLeads(filterStatus || undefined);
+const counts = await countByStatus();
+
+const total      = Object.values(counts).reduce((a, b) => a + b, 0);
+const novo       = counts['NOVO'] ?? 0;
+const interessado= counts['INTERESSADO'] ?? 0;
+const qualificado= counts['QUALIFICADO'] ?? 0;
+const convertido = (counts['PIX_GERADO'] ?? 0) + (counts['PIX_PAGO'] ?? 0);
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 60) return `${m}min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+function waLink(phone: string): string {
+  return `https://wa.me/55${phone.replace(/\D/g, '')}`;
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  INTERESSADO: 'Interessado',
+  QUALIFICADO: 'Qualificado',
+  PIX_GERADO:  'Pix Gerado',
+  PIX_PAGO:    'Pago',
+  NOVO:        'Novo',
+};
+
+const FILTERS = [
+  { value: '',                  label: `Todos`,        count: total },
+  { value: 'NOVO',              label: `Novos`,        count: novo },
+  { value: 'INTERESSADO',       label: `Interessados`, count: interessado },
+  { value: 'QUALIFICADO',       label: `Qualificados`, count: qualificado },
+  { value: 'PIX_PAGO,PIX_GERADO', label: `Convertidos`, count: convertido },
+];
+---
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="theme-color" content="#f0f4ff" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/brand/avatar_e-trindade.png" />
+  <title>Contatos · Embelleze</title>
+  <link rel="icon" href="/favicon.ico" />
+  <script is:inline>
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #eef1f8;
+      --glass:   rgba(255,255,255,0.75);
+      --border:  rgba(255,255,255,0.92);
+      --border2: rgba(200,210,240,0.55);
+      --purple:  #5f3080;
+      --orange:  #de583d;
+      --green:   #22c55e;
+      --text:    #1a1030;
+      --muted:   #7b6fa0;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Desktop: centraliza como app mobile ── */
+    @media (min-width: 600px) {
+      body {
+        background: #d8dce8;
+        display: flex;
+        justify-content: center;
+      }
+      body::before { display: none; }
+      .page-shell {
+        width: 430px;
+        min-height: 100dvh;
+        position: relative;
+        background: var(--bg);
+        border-radius: 40px;
+        box-shadow: 0 32px 80px rgba(0,0,0,0.22), 0 0 0 1px rgba(255,255,255,0.4);
+        overflow: hidden;
+      }
+      .page-shell::before {
+        content: '';
+        position: absolute; inset: 0;
+        background:
+          radial-gradient(ellipse 80% 50% at 20% 0%, rgba(95,48,128,.12) 0%, transparent 60%),
+          radial-gradient(ellipse 60% 40% at 80% 100%, rgba(222,88,61,.08) 0%, transparent 55%),
+          linear-gradient(160deg, #eef1f8 0%, #e8ecf8 100%);
+        z-index: 0; pointer-events: none;
+      }
+    }
+
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 0%, rgba(95,48,128,.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(222,88,61,.08) 0%, transparent 55%),
+        linear-gradient(160deg, #eef1f8 0%, #e8ecf8 100%);
+      z-index: 0; pointer-events: none;
+    }
+
+    /* ── Topbar ── */
+    .topbar {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: calc(env(safe-area-inset-top,0px) + 14px) 20px 12px;
+      background: rgba(238,241,248,0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border2);
+    }
+    .topbar__left { display: flex; align-items: center; gap: 10px; }
+    .topbar__avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; box-shadow: 0 2px 8px rgba(95,48,128,.25); }
+    .topbar__name { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; line-height: 1.1; }
+    .topbar__role {
+      display: inline-block;
+      background: rgba(95,48,128,.12); color: var(--purple);
+      font-size: 9px; font-weight: 700; padding: 2px 7px;
+      border-radius: 100px; letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .topbar__logo { height: 28px; width: auto; object-fit: contain; opacity: .85; }
+    .topbar__logout {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(255,255,255,.6); border: 1px solid var(--border2);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted); text-decoration: none;
+      backdrop-filter: blur(10px);
+    }
+
+    /* ── KPIs compactos ── */
+    .kpis {
+      display: grid; grid-template-columns: repeat(3,1fr);
+      gap: 8px; padding: 12px 16px 0;
+      position: relative; z-index: 1;
+    }
+    .kpi {
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px 10px;
+      text-align: center;
+      box-shadow: 0 2px 12px rgba(95,48,128,.07), 0 1px 0 rgba(255,255,255,.9) inset;
+    }
+    .kpi__num { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; color: var(--text); line-height: 1; }
+    .kpi__num--orange { color: var(--orange); }
+    .kpi__num--green  { color: var(--green); }
+    .kpi__num--purple { color: var(--purple); }
+    .kpi__lbl { font-size: 9px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+
+    /* ── Filtro dropdown ── */
+    .filter-wrap {
+      padding: 10px 16px 6px;
+      position: relative; z-index: 1;
+    }
+    .filter-select {
+      width: 100%;
+      appearance: none; -webkit-appearance: none;
+      background: rgba(255,255,255,.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: 11px 40px 11px 16px;
+      font-size: 13px; font-weight: 600;
+      color: var(--text);
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(95,48,128,.07), 0 1px 0 rgba(255,255,255,.9) inset;
+      outline: none;
+    }
+    .filter-select:focus {
+      border-color: var(--purple);
+      box-shadow: 0 0 0 3px rgba(95,48,128,.15);
+    }
+    .filter-chevron {
+      position: absolute; right: 28px; top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none; color: var(--muted);
+    }
+
+    /* ── Lista de contatos ── */
+    .leads {
+      padding: 4px 16px calc(100px + env(safe-area-inset-bottom,0px));
+      display: flex; flex-direction: column; gap: 8px;
+      position: relative; z-index: 1;
+    }
+
+    .empty {
+      text-align: center; color: var(--muted);
+      padding: 60px 16px; font-size: 14px;
+    }
+
+    /* ── Card de contato ── */
+    .lead-card {
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px 16px;
+      display: flex; flex-direction: column; gap: 10px;
+      box-shadow: 0 2px 12px rgba(95,48,128,.06), 0 1px 0 rgba(255,255,255,.9) inset;
+      position: relative; overflow: hidden;
+    }
+    /* Faixa de status lateral */
+    .lead-card::before {
+      content: '';
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 3px; border-radius: 18px 0 0 18px;
+    }
+    .lead-card--novo::before        { background: var(--muted); }
+    .lead-card--qualificado::before { background: var(--purple); }
+    .lead-card--interessado::before { background: var(--orange); }
+    .lead-card--pix_gerado::before  { background: var(--green); }
+    .lead-card--pix_pago::before    { background: var(--green); }
+
+    .lead-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .lead-name { font-size: 15px; font-weight: 700; color: var(--text); }
+    .lead-phone { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .lead-time { font-size: 11px; color: var(--muted); white-space: nowrap; flex-shrink: 0; padding-top: 2px; }
+
+    /* Tags */
+    .lead-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tag {
+      font-size: 11px; font-weight: 600;
+      border-radius: 8px; padding: 3px 9px;
+      background: rgba(95,48,128,.07);
+      color: var(--muted);
+      border: 1px solid rgba(95,48,128,.12);
+    }
+    .tag--novo        { background: rgba(123,111,160,.1); color: var(--muted); }
+    .tag--interessado { background: rgba(222,88,61,.1);  color: var(--orange); border-color: rgba(222,88,61,.2); }
+    .tag--qualificado { background: rgba(95,48,128,.1);  color: var(--purple); border-color: rgba(95,48,128,.2); }
+    .tag--convertido  { background: rgba(34,197,94,.1);  color: #16a34a;       border-color: rgba(34,197,94,.2); }
+    .tag--utm         { background: rgba(234,179,8,.1);  color: #a16207;       border-color: rgba(234,179,8,.2); }
+    .tag--crm         { background: rgba(34,197,94,.1);  color: #16a34a;       border-color: rgba(34,197,94,.2); }
+
+    /* Ações */
+    .lead-actions { display: flex; gap: 8px; }
+    .action-btn {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+      border-radius: 12px; padding: 10px;
+      font-size: 13px; font-weight: 700;
+      text-decoration: none; transition: opacity .15s;
+    }
+    .action-btn:active { opacity: .75; }
+    .action-btn--call {
+      background: rgba(95,48,128,.08);
+      border: 1px solid rgba(95,48,128,.15);
+      color: var(--purple);
+    }
+    .action-btn--wa {
+      background: #22c55e;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(34,197,94,.3);
+    }
+
+    /* ── Nav flutuante ── */
+    .nav {
+      position: fixed;
+      bottom: calc(12px + env(safe-area-inset-bottom,0px));
+      left: 50%; transform: translateX(-50%);
+      z-index: 100;
+      display: flex; gap: 4px;
+      padding: 8px 10px;
+      background: rgba(255,255,255,0.78);
+      backdrop-filter: blur(32px) saturate(1.8);
+      -webkit-backdrop-filter: blur(32px) saturate(1.8);
+      border: 1px solid rgba(255,255,255,0.95);
+      border-radius: 100px;
+      box-shadow: 0 8px 32px rgba(95,48,128,.18), 0 2px 8px rgba(0,0,0,.06);
+    }
+    .nav-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 16px; border-radius: 100px;
+      color: var(--muted); font-size: 10px; font-weight: 600;
+      text-decoration: none; white-space: nowrap;
+      transition: all .2s;
+    }
+    .nav-btn svg { width: 20px; height: 20px; stroke-width: 2; }
+    .nav-btn.active {
+      background: var(--purple); color: #fff;
+      box-shadow: 0 4px 16px rgba(95,48,128,.35);
+    }
+
+    .refresh-hint {
+      text-align: center; font-size: 10px; color: var(--muted);
+      padding: 6px 0; opacity: .5; position: relative; z-index: 1;
+    }
+  </style>
+</head>
+<body>
+<div class="page-shell">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar__left">
+      <img class="topbar__avatar" src="/brand/avatar_e-trindade.png" alt="Embelleze" />
+      <div>
+        <div class="topbar__name">Andreia</div>
+        <span class="topbar__role">Gestão</span>
+      </div>
+    </div>
+    <img class="topbar__logo" src="/brand/logo_cor_horizontal.png" alt="Instituto Embelleze" />
+    <a href="/api/auth/logout" class="topbar__logout" title="Sair">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+      </svg>
+    </a>
+  </header>
+
+  <!-- KPIs -->
+  <div class="kpis">
+    <div class="kpi">
+      <div class="kpi__num kpi__num--orange">{novo}</div>
+      <div class="kpi__lbl">Novos</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi__num kpi__num--purple">{qualificado}</div>
+      <div class="kpi__lbl">Qualificados</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi__num kpi__num--green">{convertido}</div>
+      <div class="kpi__lbl">Convertidos</div>
+    </div>
+  </div>
+
+  <!-- Filtro dropdown -->
+  <div class="filter-wrap">
+    <select
+      class="filter-select"
+      onchange="location.href='/leads'+(this.value?'?status='+this.value:'')"
+    >
+      {FILTERS.map(f => (
+        <option value={f.value ?? ''} selected={filterStatus === f.value}>
+          {f.label} ({f.count})
+        </option>
+      ))}
+    </select>
+    <svg class="filter-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  </div>
+
+  <!-- Lista -->
+  <div class="leads">
+    {leads.length === 0 && (
+      <div class="empty">Nenhum contato encontrado.</div>
+    )}
+    {leads.map(lead => {
+      const statusKey = lead.status?.toLowerCase() ?? 'novo';
+      const isConvertido = statusKey === 'pix_pago' || statusKey === 'pix_gerado';
+      const phone = lead.phone.replace(/\D/g, '');
+      const displayPhone = phone.length >= 10
+        ? `(${phone.slice(0,2)}) ${phone.slice(2,7)}-${phone.slice(7)}`
+        : lead.phone;
+      return (
+        <div class={`lead-card lead-card--${statusKey}`}>
+          <div class="lead-top">
+            <div>
+              <div class="lead-name">{lead.name ?? 'Sem nome'}</div>
+              <div class="lead-phone">{displayPhone}</div>
+            </div>
+            <div class="lead-time">{timeAgo(lead.updated_at)}</div>
+          </div>
+
+          <div class="lead-tags">
+            <span class={`tag tag--${isConvertido ? 'convertido' : statusKey}`}>
+              {STATUS_LABEL[lead.status] ?? lead.status}
+            </span>
+            {lead.course_interest && <span class="tag">{lead.course_interest}</span>}
+            {lead.utm_source && <span class="tag tag--utm">{lead.utm_source}</span>}
+            {lead.origin && lead.origin !== lead.utm_source && <span class="tag">{lead.origin}</span>}
+            {lead.probeltec_synced_at && <span class="tag tag--crm">No sistema</span>}
+          </div>
+
+          <div class="lead-actions">
+            <a href={`tel:+55${phone}`} class="action-btn action-btn--call">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.72A2 2 0 012 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.09a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 15z"/>
+              </svg>
+              Ligar
+            </a>
+            <a href={waLink(lead.phone)} target="_blank" rel="noopener" class="action-btn action-btn--wa">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+              WhatsApp
+            </a>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+
+  <div class="refresh-hint">Atualiza a cada 60s</div>
+
+  <!-- Nav flutuante -->
+  <nav class="nav">
+    <a href="/" class="nav-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Visão Geral
+    </a>
+    <a href="/" class="nav-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      Geografia
+    </a>
+    <a href="/" class="nav-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Fontes
+    </a>
+    <a href="/leads" class="nav-btn active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Contatos
+    </a>
+  </nav>
+
+  <script is:inline>
+    setTimeout(function() { location.reload(); }, 60000);
+  </script>
+</div><!-- /.page-shell -->
+</body>
+</html>
