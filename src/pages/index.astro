@@ -131,6 +131,28 @@ const campaignTaxa = campaignTotalLeads > 0
   ? ((campaignMatriculas / campaignTotalLeads) * 100).toFixed(1)
   : '0.0';
 
+const metaEnv = {
+  appId: process.env.META_APP_ID ?? '',
+  appSecret: process.env.META_APP_SECRET ?? '',
+  accessToken: process.env.META_ACCESS_TOKEN ?? '',
+  adAccountId: process.env.META_AD_ACCOUNT_ID ?? '',
+  lookbackDays: Number(process.env.META_LOOKBACK_DAYS ?? '30') || 30,
+  timezone: process.env.META_TIMEZONE ?? 'America/Sao_Paulo',
+};
+
+const metaReady = Boolean(
+  metaEnv.appId
+  && metaEnv.appSecret
+  && metaEnv.accessToken
+  && metaEnv.adAccountId,
+);
+
+const metaMissing: string[] = [];
+if (!metaEnv.appId) metaMissing.push('META_APP_ID');
+if (!metaEnv.appSecret) metaMissing.push('META_APP_SECRET');
+if (!metaEnv.accessToken) metaMissing.push('META_ACCESS_TOKEN');
+if (!metaEnv.adAccountId) metaMissing.push('META_AD_ACCOUNT_ID');
+
 const FUNNEL_COLOR: Record<string, string> = {
   'Novos':        '#a78bca',
   'Qualificados': '#5f3080',
@@ -454,6 +476,14 @@ const FUNNEL_COLOR: Record<string, string> = {
       background: #7c3aed;
       animation: pulse-dot 2s infinite;
     }
+    .meta-hero__status--ok {
+      color: #15803d;
+      background: rgba(34,197,94,.12);
+    }
+    .meta-hero__status--ok::before {
+      background: #16a34a;
+      animation: none;
+    }
     @keyframes pulse-dot {
       0%,100% { opacity: 1; }
       50% { opacity: .3; }
@@ -479,6 +509,19 @@ const FUNNEL_COLOR: Record<string, string> = {
       border: 1px solid rgba(95,48,128,.15);
       padding: 4px 12px;
       border-radius: 100px;
+    }
+    .meta-config {
+      margin-top: 10px;
+      background: rgba(95,48,128,.05);
+      border: 1px solid rgba(95,48,128,.12);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .meta-config strong {
+      color: var(--text);
     }
 
     /* ── Origens (view geo/fontes) ── */
@@ -718,7 +761,9 @@ const FUNNEL_COLOR: Record<string, string> = {
         </div>
         <div class="meta-hero__text">
           <h2 class="meta-hero__title">Resultados Meta</h2>
-          <span class="meta-hero__status">Ativo</span>
+          <span class={`meta-hero__status${metaReady ? ' meta-hero__status--ok' : ''}`}>
+            {metaReady ? 'API pronta' : 'Configuração pendente'}
+          </span>
         </div>
       </div>
 
@@ -763,6 +808,14 @@ const FUNNEL_COLOR: Record<string, string> = {
           Sem campanhas rastreadas por UTM no período.
         </div>
       )}
+
+      <div class="meta-config">
+        {metaReady ? (
+          <span><strong>Meta Ads:</strong> credenciais carregadas. Janela padrão: <strong>{metaEnv.lookbackDays} dias</strong>. Fuso: <strong>{metaEnv.timezone}</strong>.</span>
+        ) : (
+          <span><strong>Meta Ads:</strong> faltam variáveis de ambiente para API real: <strong>{metaMissing.join(', ') || 'N/A'}</strong>.</span>
+        )}
+      </div>
     </div>
 
     <!-- ── VIEW: Fontes ── -->
