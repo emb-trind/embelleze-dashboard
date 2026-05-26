@@ -69,6 +69,19 @@ const sources = hasFollowup
       .slice(0, 10)
   : legacySources;
 
+const SOURCE_LABEL_PT: Record<string, string> = {
+  lp_transforme: 'LP Transforme',
+  whatsapp_form: 'Form WhatsApp',
+  lead_cadastro_manual: 'Cadastro manual',
+  site_footer_form: 'Rodapé do site',
+  unknown_origem: 'Origem desconhecida',
+};
+
+const displaySources = sources.map((s) => ({
+  ...s,
+  fonte: SOURCE_LABEL_PT[s.fonte] ?? s.fonte,
+}));
+
 const stalled = hasFollowup
   ? followupLeads
       .filter((lead) => lead.status_canon === 'contato' && lead.whatsapp_state !== 'replied')
@@ -751,9 +764,9 @@ const FUNNEL_COLOR: Record<string, string> = {
     <!-- ── VIEW: Fontes ── -->
     <div class="view" id="view-fontes">
       <div class="sec-title">Origem dos leads</div>
-      {sources.length > 0 ? (
+      {displaySources.length > 0 ? (
         <div class="glass-card source-wrap">
-          {sources.map(s => (
+          {displaySources.map(s => (
             <div class="source-row">
               <div>
                 <div class="source-name">{s.fonte}</div>
