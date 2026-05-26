@@ -2548,16 +2548,16 @@
     "utm_source": null,
     "utm_campaign": null,
     "owner": "bella",
-    "email_state": "pending",
+    "email_state": "delivered",
     "whatsapp_state": "pending",
     "sms_state": "pending",
     "next_action_at": null,
     "next_channel": "whatsapp",
-    "attempt_count": 0,
-    "last_action": null,
-    "last_result": null,
+    "attempt_count": 3,
+    "last_action": "email.delivered",
+    "last_result": "delivered",
     "block_reason": null,
-    "notes": null,
+    "notes": "resend_type=email.delivered",
     "sources": [
       "campaign"
     ]
