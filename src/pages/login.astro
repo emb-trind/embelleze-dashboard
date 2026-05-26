@@ -94,6 +94,17 @@ const error = Astro.url.searchParams.get('error');
       padding: 10px 14px;
       font-size: 13px;
     }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
   </style>
 </head>
 <body>
@@ -105,6 +116,18 @@ const error = Astro.url.searchParams.get('error');
     <h1>Entrar no painel</h1>
     {error && <div class="error">Senha incorreta.</div>}
     <form method="POST" action="/api/auth/login">
+      <label for="username" class="sr-only">Usuário</label>
+      <input
+        id="username"
+        name="username"
+        type="text"
+        class="sr-only"
+        autocomplete="username"
+        value="gestao"
+        tabindex="-1"
+        aria-hidden="true"
+        readonly
+      />
       <label for="password">Senha</label>
       <div class="password-wrap">
         <input id="password" name="password" type="password" autocomplete="current-password" autofocus required />
