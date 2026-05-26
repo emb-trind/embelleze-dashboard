@@ -86,6 +86,34 @@ const taxaConversao = summary.total > 0
   ? ((summary.pix_pago / summary.total) * 100).toFixed(1)
   : '0.0';
 
+const campaignLeads = hasFollowup
+  ? followupLeads.filter((lead) => lead.utm_campaign || lead.utm_source)
+  : [];
+const campaignStats = Array.from(
+  campaignLeads.reduce((acc, lead) => {
+    const key = lead.utm_campaign || lead.utm_source || 'sem_campanha';
+    const current = acc.get(key) || { campaign: key, total: 0, matriculas: 0, contatos: 0 };
+    current.total += 1;
+    if (lead.status_canon === 'matricula') current.matriculas += 1;
+    if (lead.status_canon === 'contato') current.contatos += 1;
+    acc.set(key, current);
+    return acc;
+  }, new Map<string, { campaign: string; total: number; matriculas: number; contatos: number }>())
+    .values(),
+)
+  .map((row) => ({
+    ...row,
+    taxa: row.total > 0 ? Math.round((row.matriculas / row.total) * 100) : 0,
+  }))
+  .sort((a, b) => b.total - a.total)
+  .slice(0, 8);
+const campaignTracked = campaignStats.length;
+const campaignTotalLeads = campaignLeads.length;
+const campaignMatriculas = campaignLeads.filter((lead) => lead.status_canon === 'matricula').length;
+const campaignTaxa = campaignTotalLeads > 0
+  ? ((campaignMatriculas / campaignTotalLeads) * 100).toFixed(1)
+  : '0.0';
+
 const FUNNEL_COLOR: Record<string, string> = {
   'Novos':        '#a78bca',
   'Qualificados': '#5f3080',
@@ -673,25 +701,51 @@ const FUNNEL_COLOR: Record<string, string> = {
         </div>
         <div class="meta-hero__text">
           <h2 class="meta-hero__title">Resultados Meta</h2>
-          <span class="meta-hero__status">Em implementação</span>
+          <span class="meta-hero__status">Ativo</span>
         </div>
       </div>
 
-      <div class="meta-coming">
-        <div class="meta-coming__icon">🔗</div>
-        <p class="meta-coming__title">Integração em andamento</p>
-        <p class="meta-coming__desc">
-          As métricas de campanhas — alcance, impressões, cliques, custo por lead e ROAS — serão exibidas aqui assim que a conexão com a API Meta Ads for ativada.
-        </p>
-        <div class="meta-chips">
-          <span class="meta-chip">Alcance</span>
-          <span class="meta-chip">CPL</span>
-          <span class="meta-chip">ROAS</span>
-          <span class="meta-chip">Impressões</span>
-          <span class="meta-chip">Cliques</span>
-          <span class="meta-chip">Conversões</span>
+      <div class="kpi-grid">
+        <div class="glass-card kpi">
+          <div class="kpi__num kpi__num--purple">{campaignTracked}</div>
+          <div class="kpi__label">Campanhas</div>
+          <div class="kpi__sub">com rastreio UTM</div>
+        </div>
+        <div class="glass-card kpi">
+          <div class="kpi__num">{campaignTotalLeads}</div>
+          <div class="kpi__label">Leads</div>
+          <div class="kpi__sub">atribuídos</div>
+        </div>
+        <div class="glass-card kpi">
+          <div class="kpi__num kpi__num--green">{campaignMatriculas}</div>
+          <div class="kpi__label">Matrículas</div>
+          <div class="kpi__sub">atribuídas</div>
+        </div>
+        <div class="glass-card kpi">
+          <div class="kpi__num kpi__num--orange">{campaignTaxa}%</div>
+          <div class="kpi__label">Taxa</div>
+          <div class="kpi__sub">das campanhas</div>
         </div>
       </div>
+
+      <div class="sec-title">Top campanhas</div>
+      {campaignStats.length > 0 ? (
+        <div class="glass-card source-wrap">
+          {campaignStats.map((row) => (
+            <div class="source-row">
+              <div>
+                <div class="source-name">{row.campaign}</div>
+                <div class="source-meta">{row.total} leads · {row.contatos} contato · {row.matriculas} matrícula</div>
+              </div>
+              <span class={`source-badge${row.taxa === 0 ? ' source-badge--zero' : ''}`}>{row.taxa}%</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div class="glass-card" style="padding:24px;text-align:center;color:var(--muted);font-size:13px">
+          Sem campanhas rastreadas por UTM no período.
+        </div>
+      )}
     </div>
 
     <!-- ── VIEW: Fontes ── -->
