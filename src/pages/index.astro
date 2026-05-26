@@ -1,14 +1,86 @@
 ---
-import { getOwnerSummary, getFunnelStats, getSourceStats, getStalledLeads } from '../lib/db';
+import {
+  getOwnerSummary,
+  getFunnelStats,
+  getSourceStats,
+  getStalledLeads,
+  fetchFollowupLeads,
+  countFollowupByStatus,
+} from '../lib/db';
 import { getLocationStats } from '../lib/redis';
 
-const [summary, funnel, sources, stalled, geo] = await Promise.all([
+const [legacySummary, legacyFunnel, legacySources, legacyStalled, geo, followupCounts, followupLeads] = await Promise.all([
   getOwnerSummary(),
   getFunnelStats(),
   getSourceStats(),
   getStalledLeads(),
   getLocationStats(),
+  countFollowupByStatus(),
+  fetchFollowupLeads(),
 ]);
+
+const hasFollowup = followupLeads.length > 0;
+
+const summary = hasFollowup
+  ? {
+      total: followupLeads.length,
+      movimentados_hoje: followupLeads.filter((l) => (l.attempt_count ?? 0) > 0).length,
+      novo: followupCounts['novo'] ?? 0,
+      qualificado: 0,
+      interessado: followupCounts['contato'] ?? 0,
+      pix_gerado: 0,
+      pix_pago: followupCounts['matricula'] ?? 0,
+    }
+  : legacySummary;
+
+const funnel = hasFollowup
+  ? [
+      { status: 'novo', label: 'Novos', count: followupCounts['novo'] ?? 0, percent: 0 },
+      { status: 'contato', label: 'Interessados', count: followupCounts['contato'] ?? 0, percent: 0 },
+      { status: 'matricula', label: 'Pagos', count: followupCounts['matricula'] ?? 0, percent: 0 },
+    ].map((step, _, arr) => {
+      const max = Math.max(...arr.map((s) => s.count), 1);
+      return { ...step, percent: Math.round((step.count / max) * 100) };
+    })
+  : legacyFunnel;
+
+const sources = hasFollowup
+  ? Array.from(
+      followupLeads.reduce((acc, lead) => {
+        const key = lead.source_canon || 'unknown_origem';
+        const current = acc.get(key) || { fonte: key, total: 0, matriculas: 0, conversoes: 0, taxa: 0 };
+        current.total += 1;
+        if (lead.status_canon === 'matricula') {
+          current.matriculas += 1;
+          current.conversoes += 1;
+        } else if (lead.status_canon === 'contato') {
+          current.conversoes += 1;
+        }
+        acc.set(key, current);
+        return acc;
+      }, new Map<string, { fonte: string; total: number; matriculas: number; conversoes: number; taxa: number }>())
+        .values(),
+    )
+      .map((item) => ({
+        ...item,
+        taxa: item.total > 0 ? Math.round((item.matriculas / item.total) * 100) : 0,
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10)
+  : legacySources;
+
+const stalled = hasFollowup
+  ? followupLeads
+      .filter((lead) => lead.status_canon === 'contato' && lead.whatsapp_state !== 'replied')
+      .slice(0, 20)
+      .map((lead) => ({
+        phone: lead.phone_e164.replace(/^\+55/, ''),
+        name: lead.name,
+        status: lead.status_canon,
+        updated_at: lead.next_action_at || new Date().toISOString(),
+        horas_parado: 48,
+      }))
+  : legacyStalled;
 
 const taxaConversao = summary.total > 0
   ? ((summary.pix_pago / summary.total) * 100).toFixed(1)
