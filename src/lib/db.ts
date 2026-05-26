@@ -1,4 +1,6 @@
 import pg from 'pg';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 const { Pool } = pg;
 
 const pool = new Pool({
@@ -276,4 +278,58 @@ export async function getStalledLeads(): Promise<StalledLead[]> {
   } finally {
     client?.release();
   }
+}
+
+// ── Follow-up State (control plane snapshot) ───────────────────────────────
+
+export interface FollowupLead {
+  lead_id: string;
+  phone_e164: string;
+  email: string | null;
+  name: string | null;
+  status_canon: 'novo' | 'contato' | 'matricula' | 'perdido' | 'pausado' | 'unknown_status';
+  source_canon: string;
+  media_canon: string;
+  utm_source: string | null;
+  utm_campaign: string | null;
+  owner: 'bella' | 'gerente' | 'sistema';
+  email_state: string;
+  whatsapp_state: string;
+  sms_state: string;
+  next_action_at: string | null;
+  next_channel: string | null;
+  attempt_count: number;
+  last_action: string | null;
+  last_result: string | null;
+  block_reason: string | null;
+}
+
+function getFollowupStatePath(): string {
+  return (
+    process.env.FOLLOWUP_STATE_PATH
+    || path.join(process.cwd(), 'data', 'followup-state.json')
+  );
+}
+
+export async function fetchFollowupLeads(statusFilter?: string): Promise<FollowupLead[]> {
+  const filePath = getFollowupStatePath();
+  try {
+    const raw = await readFile(filePath, 'utf-8');
+    const parsed = JSON.parse(raw) as FollowupLead[];
+    const rows = Array.isArray(parsed) ? parsed : [];
+    const filter = (statusFilter || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (filter.length === 0) return rows;
+    return rows.filter((row) => filter.includes(row.status_canon));
+  } catch {
+    return [];
+  }
+}
+
+export async function countFollowupByStatus(): Promise<Record<string, number>> {
+  const rows = await fetchFollowupLeads();
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    counts[row.status_canon] = (counts[row.status_canon] || 0) + 1;
+  }
+  return counts;
 }

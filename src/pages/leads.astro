@@ -1,15 +1,20 @@
 ---
-import { fetchLeads, countByStatus } from '../lib/db';
+import { fetchLeads, countByStatus, fetchFollowupLeads, countFollowupByStatus } from '../lib/db';
 
 const filterStatus = Astro.url.searchParams.get('status') ?? '';
-const leads = await fetchLeads(filterStatus || undefined);
-const counts = await countByStatus();
+const followupLeads = await fetchFollowupLeads(filterStatus || undefined);
+const hasFollowup = followupLeads.length > 0;
+const legacyLeads = hasFollowup ? [] : await fetchLeads(filterStatus || undefined);
+const leads: Array<any> = hasFollowup ? followupLeads : legacyLeads;
 
-const total      = Object.values(counts).reduce((a, b) => a + b, 0);
-const novo       = counts['NOVO'] ?? 0;
-const interessado= counts['INTERESSADO'] ?? 0;
-const qualificado= counts['QUALIFICADO'] ?? 0;
-const convertido = (counts['PIX_GERADO'] ?? 0) + (counts['PIX_PAGO'] ?? 0);
+const counts = hasFollowup ? await countFollowupByStatus() : await countByStatus();
+
+const total = Object.values(counts).reduce((a, b) => a + b, 0);
+const novo = hasFollowup ? (counts['novo'] ?? 0) : (counts['NOVO'] ?? 0);
+const contato = hasFollowup ? (counts['contato'] ?? 0) : (counts['INTERESSADO'] ?? 0);
+const matricula = hasFollowup
+  ? (counts['matricula'] ?? 0)
+  : (counts['PIX_GERADO'] ?? 0) + (counts['PIX_PAGO'] ?? 0);
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -21,7 +26,9 @@ function timeAgo(iso: string): string {
 }
 
 function waLink(phone: string): string {
-  return `https://wa.me/55${phone.replace(/\D/g, '')}`;
+  const digits = phone.replace(/\D/g, '');
+  const withCountryCode = digits.startsWith('55') ? digits : `55${digits}`;
+  return `https://wa.me/${withCountryCode}`;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -30,15 +37,33 @@ const STATUS_LABEL: Record<string, string> = {
   PIX_GERADO:  'Pix Gerado',
   PIX_PAGO:    'Pago',
   NOVO:        'Novo',
+  novo: 'Novo',
+  contato: 'Contato',
+  matricula: 'Matrícula',
+  perdido: 'Perdido',
+  pausado: 'Pausado',
+  unknown_status: 'Desconhecido',
 };
 
-const FILTERS = [
-  { value: '',                  label: `Todos`,        count: total },
-  { value: 'NOVO',              label: `Novos`,        count: novo },
-  { value: 'INTERESSADO',       label: `Interessados`, count: interessado },
-  { value: 'QUALIFICADO',       label: `Qualificados`, count: qualificado },
-  { value: 'PIX_PAGO,PIX_GERADO', label: `Convertidos`, count: convertido },
-];
+const FILTERS = hasFollowup
+  ? [
+      { value: '', label: 'Todos', count: total },
+      { value: 'novo', label: 'Novos', count: counts['novo'] ?? 0 },
+      { value: 'contato', label: 'Contato', count: counts['contato'] ?? 0 },
+      { value: 'matricula', label: 'Matrícula', count: counts['matricula'] ?? 0 },
+      { value: 'unknown_status', label: 'Desconhecidos', count: counts['unknown_status'] ?? 0 },
+    ]
+  : [
+      { value: '', label: 'Todos', count: total },
+      { value: 'NOVO', label: 'Novos', count: novo },
+      { value: 'INTERESSADO', label: 'Interessados', count: contato },
+      { value: 'QUALIFICADO', label: 'Qualificados', count: counts['QUALIFICADO'] ?? 0 },
+      { value: 'PIX_PAGO,PIX_GERADO', label: 'Convertidos', count: matricula },
+    ];
+
+function normalizePhone(raw: string): string {
+  return raw.replace(/\D/g, '');
+}
 ---
 <!doctype html>
 <html lang="pt-BR">
@@ -228,6 +253,11 @@ const FILTERS = [
       width: 3px; border-radius: 18px 0 0 18px;
     }
     .lead-card--novo::before        { background: var(--muted); }
+    .lead-card--contato::before     { background: var(--orange); }
+    .lead-card--matricula::before   { background: var(--green); }
+    .lead-card--perdido::before     { background: #ef4444; }
+    .lead-card--pausado::before     { background: #f59e0b; }
+    .lead-card--unknown_status::before { background: #94a3b8; }
     .lead-card--qualificado::before { background: var(--purple); }
     .lead-card--interessado::before { background: var(--orange); }
     .lead-card--pix_gerado::before  { background: var(--green); }
@@ -248,6 +278,10 @@ const FILTERS = [
       border: 1px solid rgba(95,48,128,.12);
     }
     .tag--novo        { background: rgba(123,111,160,.1); color: var(--muted); }
+    .tag--contato     { background: rgba(222,88,61,.1);  color: var(--orange); border-color: rgba(222,88,61,.2); }
+    .tag--matricula   { background: rgba(34,197,94,.1);  color: #16a34a;       border-color: rgba(34,197,94,.2); }
+    .tag--perdido     { background: rgba(239,68,68,.1);  color: #dc2626;       border-color: rgba(239,68,68,.2); }
+    .tag--pausado     { background: rgba(245,158,11,.12); color: #b45309;      border-color: rgba(245,158,11,.2); }
     .tag--interessado { background: rgba(222,88,61,.1);  color: var(--orange); border-color: rgba(222,88,61,.2); }
     .tag--qualificado { background: rgba(95,48,128,.1);  color: var(--purple); border-color: rgba(95,48,128,.2); }
     .tag--convertido  { background: rgba(34,197,94,.1);  color: #16a34a;       border-color: rgba(34,197,94,.2); }
@@ -335,12 +369,12 @@ const FILTERS = [
       <div class="kpi__lbl">Novos</div>
     </div>
     <div class="kpi">
-      <div class="kpi__num kpi__num--purple">{qualificado}</div>
-      <div class="kpi__lbl">Qualificados</div>
+      <div class="kpi__num kpi__num--purple">{contato}</div>
+      <div class="kpi__lbl">Contato</div>
     </div>
     <div class="kpi">
-      <div class="kpi__num kpi__num--green">{convertido}</div>
-      <div class="kpi__lbl">Convertidos</div>
+      <div class="kpi__num kpi__num--green">{matricula}</div>
+      <div class="kpi__lbl">Matrícula</div>
     </div>
   </div>
 
@@ -367,12 +401,21 @@ const FILTERS = [
       <div class="empty">Nenhum contato encontrado.</div>
     )}
     {leads.map(lead => {
-      const statusKey = lead.status?.toLowerCase() ?? 'novo';
-      const isConvertido = statusKey === 'pix_pago' || statusKey === 'pix_gerado';
-      const phone = lead.phone.replace(/\D/g, '');
+      const statusKey = hasFollowup
+        ? (lead.status_canon || 'unknown_status')
+        : (lead.status?.toLowerCase() ?? 'novo');
+      const isConvertido = statusKey === 'pix_pago' || statusKey === 'pix_gerado' || statusKey === 'matricula';
+      const rawPhone = hasFollowup ? (lead.phone_e164 || '') : (lead.phone || '');
+      const phone = normalizePhone(rawPhone);
       const displayPhone = phone.length >= 10
         ? `(${phone.slice(0,2)}) ${phone.slice(2,7)}-${phone.slice(7)}`
-        : lead.phone;
+        : rawPhone;
+      const statusLabelKey = hasFollowup ? lead.status_canon : lead.status;
+      const sourceLabel = hasFollowup ? lead.source_canon : lead.origin;
+      const mediaLabel = hasFollowup ? lead.media_canon : null;
+      const utmLabel = hasFollowup ? lead.utm_source : lead.utm_source;
+      const ownerLabel = hasFollowup ? lead.owner : null;
+      const channelState = hasFollowup ? lead.whatsapp_state : null;
       return (
         <div class={`lead-card lead-card--${statusKey}`}>
           <div class="lead-top">
@@ -380,27 +423,30 @@ const FILTERS = [
               <div class="lead-name">{lead.name ?? 'Sem nome'}</div>
               <div class="lead-phone">{displayPhone}</div>
             </div>
-            <div class="lead-time">{timeAgo(lead.updated_at)}</div>
+            <div class="lead-time">{hasFollowup ? `${lead.attempt_count ?? 0} tent.` : timeAgo(lead.updated_at)}</div>
           </div>
 
           <div class="lead-tags">
             <span class={`tag tag--${isConvertido ? 'convertido' : statusKey}`}>
-              {STATUS_LABEL[lead.status] ?? lead.status}
+              {STATUS_LABEL[statusLabelKey] ?? statusLabelKey}
             </span>
-            {lead.course_interest && <span class="tag">{lead.course_interest}</span>}
-            {lead.utm_source && <span class="tag tag--utm">{lead.utm_source}</span>}
-            {lead.origin && lead.origin !== lead.utm_source && <span class="tag">{lead.origin}</span>}
-            {lead.probeltec_synced_at && <span class="tag tag--crm">No sistema</span>}
+            {!hasFollowup && lead.course_interest && <span class="tag">{lead.course_interest}</span>}
+            {utmLabel && <span class="tag tag--utm">{utmLabel}</span>}
+            {sourceLabel && <span class="tag">{sourceLabel}</span>}
+            {mediaLabel && <span class="tag">{mediaLabel}</span>}
+            {ownerLabel && <span class="tag">Resp.: {ownerLabel}</span>}
+            {channelState && <span class="tag">WA: {channelState}</span>}
+            {!hasFollowup && lead.probeltec_synced_at && <span class="tag tag--crm">No sistema</span>}
           </div>
 
           <div class="lead-actions">
-            <a href={`tel:+55${phone}`} class="action-btn action-btn--call">
+            <a href={`tel:+${phone}`} class="action-btn action-btn--call">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.72A2 2 0 012 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.09a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 15z"/>
               </svg>
               Ligar
             </a>
-            <a href={waLink(lead.phone)} target="_blank" rel="noopener" class="action-btn action-btn--wa">
+            <a href={waLink(rawPhone)} target="_blank" rel="noopener" class="action-btn action-btn--wa">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
               </svg>
