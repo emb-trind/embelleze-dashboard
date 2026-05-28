@@ -956,6 +956,26 @@ const dateStr = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '
   }
 
   setInterval(refreshFeed, 30000);
+
+  // Hash nav — .main tem overflow-y: auto, window não scrolla
+  function scrollToHash(hash) {
+    var target = hash ? document.getElementById(hash) : null;
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  document.querySelectorAll('.nav-item[href*="#"]').forEach(function(link) {
+    link.addEventListener('click', function(e) {
+      var hash = link.getAttribute('href').split('#')[1];
+      if (hash && document.getElementById(hash)) {
+        e.preventDefault();
+        history.pushState(null, '', '#' + hash);
+        scrollToHash(hash);
+      }
+    });
+  });
+
+  // scroll ao carregar com hash na URL (ex: /desktop#meta)
+  if (location.hash) scrollToHash(location.hash.slice(1));
 </script>
 
 </body>

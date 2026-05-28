@@ -11,6 +11,12 @@ Deploy  : Railway
 ========================================
 ```
 
+## Convenções TypeScript
+
+`tsconfig.json` segue o padrão workspace — ver raiz `CLAUDE.md` → *Convenções de Configuração*.
+Este módulo não usa `baseUrl`, portanto não inclui `ignoreDeprecations`.
+Targets Makefile canônicos: `dev` · `build` · `check` · `clean` · `install`.
+
 ## Escopo
 
 Painel de leitura para operação diária.

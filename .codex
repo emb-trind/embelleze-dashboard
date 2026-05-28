@@ -1,0 +1,85 @@
+# Embelleze Dashboard · Codex Context
+
+## Identity
+
+Operational dashboard for Instituto Embelleze Trindade commercial team.
+
+- Framework: Astro SSR
+- Deploy: Railway direct build from `emb-trind/embelleze-dashboard`
+- Domain: `dash-embelleze.up.railway.app`
+- Primary goal: give the team a clear, real-time view of leads, funnel, and Meta Ads performance
+
+## Required Reading
+
+Before changing code, read the closest applicable docs:
+
+- `AGENTS.md`
+- `CONTEXT.md`
+- `CLAUDE.md`
+- parent workspace docs when the task touches deploy, workspace, or service boundaries
+
+## Operating Rules
+
+This module is **read-only**. It consumes state — it never writes it.
+
+- Do not write to Postgres, Redis, or any shared state.
+- Do not trigger emails, WhatsApp messages, or webhooks.
+- All canonical state lives in `embelleze-web`. Never bypass that boundary.
+- Every new external integration must live in its own `src/lib/<name>.ts`.
+- Do not use jargon in the UI — the audience is the commercial team, not developers.
+- Do not hardcode source taxonomy — use the PT-BR taxonomy defined in `CLAUDE.md`.
+- Do not use `import.meta.env` for runtime server-side reads — use `process.env`.
+- Every new env var must be documented in `SETUP.md` and `.env.example`.
+- pnpm only — never npm or yarn.
+- Do not touch `.env`, secrets, tokens, or private keys.
+
+## Key Files
+
+- `src/lib/db.ts` — Postgres queries and followup-state reads
+- `src/lib/meta.ts` — `fetchMetaInsights()` via Meta Marketing API
+- `src/lib/redis.ts` — geo and location reads
+- `src/lib/auth.ts` — session cookie handling
+- `src/pages/index.astro` — mobile dashboard
+- `src/pages/desktop.astro` — desktop bento grid + activity feed
+- `src/pages/leads.astro` — contact list
+- `src/pages/api/activity.ts` — JSON feed polled every 30s
+
+## Data Sources
+
+| Source | Owner |
+|---|---|
+| `followup-state.json` | `embelleze-web` (canonical write) |
+| Postgres `leads` table | `embelleze-web` |
+| Meta Marketing API | `graph.facebook.com` (direct read) |
+| Redis geo data | `embelleze-web` via Redis |
+
+## Commands
+
+Use pnpm. The parent workspace also uses pnpm.
+
+```sh
+make help
+make dev
+make check
+make build
+```
+
+Fallback without Make:
+
+```sh
+pnpm check
+pnpm build
+pnpm dev
+```
+
+## Validation
+
+For code changes, run:
+
+```sh
+make check
+make build
+```
+
+For documentation-only or context-only changes, at least inspect the final diff
+and confirm no unrelated files were modified.

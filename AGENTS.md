@@ -11,7 +11,8 @@ Leitura  : obrigatória antes de qualquer ação
 
 ## ⟠ Primeira leitura
 
-1. Este arquivo
+1. Este arquivo `dev-agent.md`
+2. Sobre tráfego `mbelleze-dashboard/docs/meta-ads.md`
 2. `CLAUDE.md` — regras técnicas e taxonomia
 3. `SETUP.md` — vars de ambiente, estrutura de arquivos
 4. `CONTEXT.md` — fontes de dados e objetivo
