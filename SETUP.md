@@ -1,6 +1,4 @@
-<!-- markdownlint-disable MD003 MD007 MD013 MD022 MD023 MD025 MD029 MD032 MD033 MD034 -->
-
-# SETUP
+<!-- markdownlint-disable MD003 MD007 MD013 MD022 MD023 MD025 MD029 MD032 MD033 MD034 MD041 -->
 
 ```text
 ========================================
@@ -8,9 +6,11 @@
 ========================================
 Framework : Astro SSR
 Runtime   : Node.js >=20.0.0
-Deploy    : Railway (Docker via GHCR)
+Deploy    : Railway (build direto do repo)
 ========================================
 ```
+
+────────────────────────────────────────
 
 ## ⟠ Pré-requisitos
 
@@ -27,54 +27,96 @@ Deploy    : Railway (Docker via GHCR)
 
 ## ⨷ Instalação
 
-Este módulo é independente — não precisa do workspace monorepo.
-
 ```bash
-cd embelleze-dashboard
+cp .env.example .env
+# preencha as vars obrigatórias
 pnpm install
+make sync     # gera .astro/types.d.ts
+make dev      # http://localhost:4322
 ```
 
 ────────────────────────────────────────
 
 ## ⧉ Variáveis de Ambiente
 
-Crie um arquivo `.env` na raiz do módulo:
-
-```bash
-cp .env.example .env   # se o arquivo existir
-# ou crie manualmente:
-```
-
-```env
-DATABASE_URL=postgresql://user:pass@host:5432/dbname
-DASHBOARD_PASSWORD=sua-senha-aqui
-PORT=4322
-```
+### Obrigatórias
 
 ```text
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-┃ VARIÁVEL            OBRIGATÓRIA   DESCRIÇÃO
-┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-┃ DATABASE_URL        sim           Postgres Railway
-┃ DASHBOARD_PASSWORD  sim           Senha de acesso ao painel
-┃ PORT                não           Padrão 4322 (dev) / 8080 (prod)
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ VARIÁVEL             DESCRIÇÃO
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ DASHBOARD_PASSWORD   senha de acesso ao painel
+┃ DATABASE_URL         Postgres Railway (sem valor = dados vazios)
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-> Sem `DATABASE_URL`, a lista de contatos retorna vazia.
-> Sem `DASHBOARD_PASSWORD`, o login sempre recusa.
+### Meta Ads
+
+```text
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ VARIÁVEL              OBR.   DESCRIÇÃO
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ META_APP_ID           sim    ID do app Meta
+┃ META_APP_SECRET       sim    Secret do app
+┃ META_ACCESS_TOKEN     sim    System User Token (não expira)
+┃ META_AD_ACCOUNT_ID    sim    ID da conta de anúncios
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ META_LOOKBACK_DAYS    não    Janela em dias → last_{n}d
+┃                              Aceita: 7 · 14 · 28 · 30 · 90
+┃                              Padrão: 30
+┃ META_DATE_PRESET      não    Preset direto da API Meta
+┃                              ex: last_7d · this_month · last_month
+┃                              Sobrepõe LOOKBACK_DAYS
+┃ META_DATE_START       não    Início do range (YYYY-MM-DD)
+┃ META_DATE_END         não    Fim do range (YYYY-MM-DD)
+┃                              DATE_START+END sobrepõe tudo acima
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ META_CAMPAIGN_STATUS  não    Filtra por status efetivo
+┃                              ex: ACTIVE · PAUSED · ACTIVE,PAUSED
+┃                              Padrão: todas as campanhas
+┃ META_LEVEL            não    Nível de agregação
+┃                              campaign · adset · ad
+┃                              Padrão: campaign
+┃ META_TIMEZONE         não    Fuso do relatório
+┃                              Padrão: America/Sao_Paulo
+┃ META_INCLUDE_TEST     não    Inclui campanhas cujo nome inicia com "Test"
+┃                              Padrão: false (filtradas da lista e do total)
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Prioridade do período:
+`DATE_START + DATE_END` > `DATE_PRESET` > `LOOKBACK_DAYS`
+
+### Opcionais
+
+```text
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ VARIÁVEL              DESCRIÇÃO
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ FOLLOWUP_STATE_PATH   path do snapshot follow-up
+┃                       Padrão: ./data/followup-state.json
+┃ OPENAI_PIXEL_ID       Pixel ID ChatGPT Ads
+┃ REDIS_URL             Redis Railway (geo e cache)
+┃ PORT                  Padrão 4322 dev / 8080 prod
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
 
 ────────────────────────────────────────
 
 ## ⧇ Comandos
 
 ```bash
+make install  # instala dependências
+make sync     # gera .astro/types.d.ts
 make dev      # dev server — http://localhost:4322
-make build    # build de produção (saída em dist/)
-make start    # inicia o servidor compilado
+make check    # type check
+make build    # build de produção
+make start    # inicia servidor compilado
 make preview  # preview do último build
-make check    # type check Astro
+make audit    # auditoria de vulnerabilidades
+make deploy   # check + build
 make clean    # remove dist/ e .astro/
+make reset    # clean + node_modules + install
 ```
 
 ────────────────────────────────────────
@@ -83,27 +125,36 @@ make clean    # remove dist/ e .astro/
 
 ```text
 embelleze-dashboard/
+├── data/
+│   └── followup-state.json   snapshot follow-up (gerado pelo embelleze-web)
+│
+├── docs/
+│   ├── markdown_style_guide.md
+│   └── meta-ads.md
+│
 ├── public/
-│   ├── favicon.ico
 │   └── brand/
-│       └── avatar_e-trindade.png
 │
 ├── src/
 │   ├── lib/
-│   │   ├── auth.ts      cookie e validação de sessão
-│   │   └── db.ts        queries PostgreSQL
-│   ├── middleware.ts    proteção de rotas
+│   │   ├── auth.ts     cookie e validação de sessão
+│   │   ├── db.ts       queries Postgres + leitura followup-state
+│   │   ├── meta.ts     fetchMetaInsights — Meta Marketing API
+│   │   └── redis.ts    geo e dados de localização
+│   │
+│   ├── middleware.ts   proteção de rotas
+│   │
 │   └── pages/
-│       ├── index.astro  redirect → /leads
-│       ├── login.astro  tela de acesso
-│       ├── leads.astro  fila de contatos
+│       ├── index.astro     mobile dashboard (redirect desktop → /desktop)
+│       ├── desktop.astro   desktop dashboard — bento grid + feed ao vivo
+│       ├── leads.astro     lista de contatos
 │       └── api/
+│           ├── activity.ts         feed de atividade (polling)
 │           └── auth/
 │               ├── login.ts
 │               └── logout.ts
 │
-├── .npmrc               only-built-dependencies (esbuild)
-├── .dockerignore
+├── .env.example
 ├── astro.config.mjs
 ├── Dockerfile
 ├── Makefile
@@ -112,53 +163,36 @@ embelleze-dashboard/
 
 ────────────────────────────────────────
 
-## ◭ Deploy — Railway via GHCR
+## ◭ Deploy — Railway
 
-Railway não faz build — puxa a imagem pronta do GHCR.
-O CI faz o build e push automaticamente a cada push em `main`
-que altere arquivos em `embelleze-dashboard/`.
+Railway conecta diretamente ao repo `emb-trind/embelleze-dashboard`
+e builda via `Dockerfile`.
+Sem GitHub Actions. Sem registry externo.
 
 ```text
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ┃ PARÂMETRO     VALOR
 ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-┃ Source        Connect Image
-┃ Imagem        ghcr.io/neomello/embelleze-dashboard:latest
-┃ Registry      ghcr.io (público, sem auth)
+┃ Source        GitHub repo
+┃ Repo          emb-trind/embelleze-dashboard
+┃ Builder       Dockerfile
 ┃ Domínio       dash-embelleze.up.railway.app
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-**Build manual (se necessário):**
-
-```bash
-cd embelleze-dashboard
-docker build -t ghcr.io/neomello/embelleze-dashboard:latest .
-docker push ghcr.io/neomello/embelleze-dashboard:latest
-```
+Rollback: Railway → redeploy de deploy anterior.
 
 ────────────────────────────────────────
 
 ## ◬ Banco de Dados
 
-O dashboard lê da tabela `leads` do Postgres Railway — a mesma instância
-usada pelo `embelleze-web`. Não cria nem migra tabelas.
+Lê da tabela `leads` do Postgres Railway —
+mesma instância do `embelleze-web`.
+Não cria nem migra tabelas.
 
-Colunas esperadas:
-
-```sql
-phone               TEXT NOT NULL
-name                TEXT
-origin              TEXT
-course_interest     TEXT
-status              TEXT   -- NOVO | QUALIFICADO | INTERESSADO | PIX_GERADO | PIX_PAGO
-last_message        TEXT
-utm_source          TEXT
-utm_medium          TEXT
-utm_campaign        TEXT
-updated_at          TIMESTAMPTZ
-probeltec_synced_at TIMESTAMPTZ
-```
+O snapshot `followup-state.json` é a fonte
+primária de dados operacionais —
+gerado e sincronizado pelo `embelleze-web`.
 
 ────────────────────────────────────────
 
@@ -166,11 +200,5 @@ probeltec_synced_at TIMESTAMPTZ
 ▓▓▓ NΞØ MELLØ
 ────────────────────────────────────────
 Core Architect · NΞØ Protocol
-
-"Code is law. Expand until
-chaos becomes protocol."
-
-Security by design.
-Exploits find no refuge here.
 ────────────────────────────────────────
 ```

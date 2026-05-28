@@ -8,8 +8,14 @@ import {
   countFollowupByStatus,
 } from '../lib/db';
 import { getLocationStats } from '../lib/redis';
+import { fetchMetaInsights } from '../lib/meta';
 
-const [legacySummary, legacyFunnel, legacySources, legacyStalled, geo, followupCounts, followupLeads] = await Promise.all([
+const ua = Astro.request.headers.get('user-agent') ?? '';
+if (!/Mobi|Android|iPhone|iPad|iPod/i.test(ua)) {
+  return Astro.redirect('/desktop');
+}
+
+const [legacySummary, legacyFunnel, legacySources, legacyStalled, geo, followupCounts, followupLeads, metaInsights] = await Promise.all([
   getOwnerSummary(),
   getFunnelStats(),
   getSourceStats(),
@@ -17,6 +23,7 @@ const [legacySummary, legacyFunnel, legacySources, legacyStalled, geo, followupC
   getLocationStats(),
   countFollowupByStatus(),
   fetchFollowupLeads(),
+  fetchMetaInsights(),
 ]);
 
 const hasFollowup = followupLeads.length > 0;
@@ -79,6 +86,7 @@ const SOURCE_LABEL_PT: Record<string, string> = {
   lead_cadastro_manual: 'Cadastro manual',
   site_footer_form: 'Rodapé do site',
   unknown_origem: 'Origem desconhecida',
+  chatgpt: 'ChatGPT Ads',
 };
 
 const displaySources = sources.map((s) => ({
@@ -140,6 +148,29 @@ const metaEnv = {
   timezone: process.env.META_TIMEZONE ?? 'America/Sao_Paulo',
 };
 
+// ── ChatGPT Ads ──────────────────────────────────────────────────────────────
+const chatgptPixelId = process.env.OPENAI_PIXEL_ID ?? '';
+const chatgptPixelReady = Boolean(chatgptPixelId);
+
+let chatgptTotal = 0;
+let chatgptMatriculas = 0;
+let chatgptContatos = 0;
+
+if (hasFollowup) {
+  const cgLeads = followupLeads.filter((l) => l.utm_source === 'chatgpt');
+  chatgptTotal = cgLeads.length;
+  chatgptMatriculas = cgLeads.filter((l) => l.status_canon === 'matricula').length;
+  chatgptContatos = cgLeads.filter((l) => l.status_canon === 'contato').length;
+} else {
+  const cgSource = legacySources.find((s) => s.fonte === 'chatgpt');
+  chatgptTotal = cgSource?.total ?? 0;
+  chatgptMatriculas = cgSource?.matriculas ?? 0;
+}
+
+const chatgptTaxa = chatgptTotal > 0
+  ? ((chatgptMatriculas / chatgptTotal) * 100).toFixed(1)
+  : '0.0';
+
 const metaReady = Boolean(
   metaEnv.appId
   && metaEnv.appSecret
@@ -152,6 +183,8 @@ if (!metaEnv.appId) metaMissing.push('META_APP_ID');
 if (!metaEnv.appSecret) metaMissing.push('META_APP_SECRET');
 if (!metaEnv.accessToken) metaMissing.push('META_ACCESS_TOKEN');
 if (!metaEnv.adAccountId) metaMissing.push('META_AD_ACCOUNT_ID');
+
+const metaSpendTotal = metaInsights.reduce((s, c) => s + c.spend, 0);
 
 const FUNNEL_COLOR: Record<string, string> = {
   'Novos':        '#a78bca',
@@ -524,6 +557,52 @@ const FUNNEL_COLOR: Record<string, string> = {
       color: var(--text);
     }
 
+    /* ── ChatGPT Ads ── */
+    .chatgpt-hero {
+      display: flex; align-items: center; gap: 16px;
+      padding: 20px;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, rgba(16,163,127,.06) 0%, rgba(0,0,0,.03) 100%);
+      border: 1px solid rgba(16,163,127,.2);
+    }
+    .chatgpt-hero__icon {
+      width: 64px; height: 64px;
+      background: rgba(255,255,255,.8);
+      border-radius: 18px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      font-size: 30px;
+      box-shadow: 0 4px 16px rgba(16,163,127,.15);
+    }
+    .chatgpt-hero__title {
+      font-size: 18px; font-weight: 800;
+      letter-spacing: -0.4px; color: var(--text);
+    }
+    .chatgpt-hero__status {
+      display: inline-flex; align-items: center; gap: 5px;
+      margin-top: 5px;
+      font-size: 11px; font-weight: 600;
+      color: #7c3aed;
+      background: rgba(124,58,237,.1);
+      padding: 3px 10px;
+      border-radius: 100px;
+    }
+    .chatgpt-hero__status::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #7c3aed;
+      animation: pulse-dot 2s infinite;
+    }
+    .chatgpt-hero__status--ok {
+      color: #15803d;
+      background: rgba(34,197,94,.12);
+    }
+    .chatgpt-hero__status--ok::before {
+      background: #16a34a;
+      animation: none;
+    }
+
     /* ── Origens (view geo/fontes) ── */
     .source-wrap { padding: 14px; }
     .source-row {
@@ -532,7 +611,8 @@ const FUNNEL_COLOR: Record<string, string> = {
       border-bottom: 1px solid rgba(95,48,128,.07);
     }
     .source-row:last-child { border-bottom: none; }
-    .source-name { font-size: 13px; font-weight: 600; color: var(--text); }
+    .source-row > div { min-width: 0; }
+    .source-name { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .source-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
     .source-badge {
       background: rgba(34,197,94,.12);
@@ -607,7 +687,7 @@ const FUNNEL_COLOR: Record<string, string> = {
       </div>
     </div>
     <img class="topbar__logo" src="/brand/logo_cor_horizontal.png" alt="Instituto Embelleze Trindade" />
-    <a href="/api/auth/logout" class="topbar__logout" title="Sair">
+    <a href="/api/auth/logout" class="topbar__logout" aria-label="Sair">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
       </svg>
@@ -788,6 +868,13 @@ const FUNNEL_COLOR: Record<string, string> = {
           <div class="kpi__label">Taxa</div>
           <div class="kpi__sub">das campanhas</div>
         </div>
+        {metaInsights.length > 0 && (
+          <div class="glass-card kpi" style="grid-column: 1 / -1">
+            <div class="kpi__num kpi__num--purple">R$ {metaSpendTotal.toFixed(2).replace('.', ',')}</div>
+            <div class="kpi__label">Gasto Meta (API)</div>
+            <div class="kpi__sub">últimos {metaEnv.lookbackDays} dias</div>
+          </div>
+        )}
       </div>
 
       <div class="sec-title">Top campanhas</div>
@@ -814,6 +901,69 @@ const FUNNEL_COLOR: Record<string, string> = {
           <span><strong>Meta Ads:</strong> credenciais carregadas. Janela padrão: <strong>{metaEnv.lookbackDays} dias</strong>. Fuso: <strong>{metaEnv.timezone}</strong>.</span>
         ) : (
           <span><strong>Meta Ads:</strong> faltam variáveis de ambiente para API real: <strong>{metaMissing.join(', ') || 'N/A'}</strong>.</span>
+        )}
+      </div>
+
+      <!-- Campanhas Meta (API) -->
+      {metaInsights.length > 0 && (
+        <>
+          <div class="sec-title" style="margin-top:12px">Campanhas Meta (API)</div>
+          <div class="glass-card source-wrap">
+            {metaInsights.map(c => (
+              <div class="source-row">
+                <div>
+                  <div class="source-name">{c.campaign_name}</div>
+                  <div class="source-meta">
+                    {c.impressions.toLocaleString('pt-BR')} imp · {c.clicks} cliques · CPC R$ {c.cpc.toFixed(2).replace('.', ',')} · CPM R$ {c.cpm.toFixed(2).replace('.', ',')} · {c.landing_page_views} LPV
+                  </div>
+                </div>
+                <span class="source-badge">R$ {c.spend.toFixed(2).replace('.', ',')}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <!-- ChatGPT Ads -->
+      <div class="sec-title" style="margin-top:20px">ChatGPT Ads</div>
+      <div class="chatgpt-hero glass-card">
+        <div class="chatgpt-hero__icon">✦</div>
+        <div>
+          <h2 class="chatgpt-hero__title">OpenAI Pixel</h2>
+          <span class={`chatgpt-hero__status${chatgptPixelReady ? ' chatgpt-hero__status--ok' : ''}`}>
+            {chatgptPixelReady ? 'Pixel configurado' : 'Pixel pendente'}
+          </span>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="glass-card kpi">
+          <div class="kpi__num kpi__num--purple">{chatgptTotal}</div>
+          <div class="kpi__label">Leads</div>
+          <div class="kpi__sub">utm_source=chatgpt</div>
+        </div>
+        <div class="glass-card kpi">
+          <div class="kpi__num">{chatgptContatos}</div>
+          <div class="kpi__label">Contatos</div>
+          <div class="kpi__sub">qualificados</div>
+        </div>
+        <div class="glass-card kpi">
+          <div class="kpi__num kpi__num--green">{chatgptMatriculas}</div>
+          <div class="kpi__label">Matrículas</div>
+          <div class="kpi__sub">atribuídas</div>
+        </div>
+        <div class="glass-card kpi">
+          <div class="kpi__num kpi__num--orange">{chatgptTaxa}%</div>
+          <div class="kpi__label">Conversão</div>
+          <div class="kpi__sub">do canal</div>
+        </div>
+      </div>
+
+      <div class="meta-config">
+        {chatgptPixelReady ? (
+          <span><strong>Pixel ID:</strong> {chatgptPixelId.slice(0, 8)}… · Leads rastreados por <strong>utm_source=chatgpt</strong>.</span>
+        ) : (
+          <span><strong>OpenAI Pixel:</strong> configure <strong>OPENAI_PIXEL_ID</strong> no Railway e <strong>PUBLIC_OPENAI_PIXEL_ID</strong> na LP para ativar rastreio.</span>
         )}
       </div>
     </div>

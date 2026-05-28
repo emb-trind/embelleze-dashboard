@@ -1,35 +1,79 @@
-<!-- markdownlint-disable MD003 MD007 MD013 MD022 MD023 MD025 MD029 MD032 MD033 MD034 -->
-
-# AGENTS
+<!-- markdownlint-disable MD003 MD007 MD013 MD022 MD023 MD025 MD029 MD032 MD033 MD034 MD041 -->
 
 ```text
 ========================================
    EMBELLEZE DASHBOARD · AGENTS
 ========================================
-Escopo : embelleze-dashboard/
+Escopo   : embelleze-dashboard/
+Leitura  : obrigatória antes de qualquer ação
 ========================================
 ```
 
-## Projeto
+## ⟠ Primeira leitura
 
-Painel mobile-first para gestão operacional.
-Este módulo é leitura e visualização, com linguagem PT-BR.
+1. Este arquivo
+2. `CLAUDE.md` — regras técnicas e taxonomia
+3. `SETUP.md` — vars de ambiente, estrutura de arquivos
+4. `CONTEXT.md` — fontes de dados e objetivo
 
-## Responsabilidades
+────────────────────────────────────────
 
-- Exibir funil e contatos
-- Exibir fontes (`origem`/`midia`) com taxonomia combinada
-- Exibir aba Meta com métricas e públicos sem assumir CRM
-- Refletir estado do follow-up sincronizado
+## ⨷ Responsabilidades
 
-## Não pertence ao dashboard
+```text
+▓▓▓ PERTENCE AO DASHBOARD
+────────────────────────────────────────
+└─ exibir funil, leads e contatos parados
+└─ exibir origens com taxonomia PT-BR
+└─ exibir campanhas Meta (UTM + API real)
+└─ exibir feed de atividade em tempo real
+└─ adaptar layout por device (mobile / desktop)
 
-- Disparar email
-- Receber webhook da Resend
-- Atualizar estado canônico de follow-up
+▓▓▓ NÃO PERTENCE AO DASHBOARD
+────────────────────────────────────────
+└─ disparar email ou WhatsApp
+└─ receber webhooks
+└─ atualizar estado canônico de follow-up
+└─ escrever em Postgres ou Redis
+```
 
-## Regras
+────────────────────────────────────────
 
-- Não usar jargão técnico na UI
-- Não usar `import.meta.env` para runtime no servidor
-- Não hardcode de fonte externa entre módulos
+## ⧉ Libs e páginas principais
+
+```text
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ ARQUIVO                   FUNÇÃO
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ src/lib/db.ts             queries Postgres + followup-state
+┃ src/lib/meta.ts           fetchMetaInsights — Meta API
+┃ src/lib/redis.ts          geo e localização
+┃ src/lib/auth.ts           cookie e sessão
+┃ src/pages/index.astro     mobile dashboard
+┃ src/pages/desktop.astro   desktop — bento grid + feed
+┃ src/pages/leads.astro     lista de contatos
+┃ src/pages/api/activity.ts JSON feed (polling 30s)
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+────────────────────────────────────────
+
+## ⍟ Regras
+
+```text
+└─ não usar import.meta.env para runtime no servidor
+└─ não hardcode de fonte externa entre módulos
+└─ não usar jargão técnico na UI
+└─ pnpm obrigatório — nunca npm ou yarn
+└─ toda nova var de ambiente → documentar em SETUP.md e .env.example
+└─ qualquer integração nova → criar lib dedicada em src/lib/
+```
+
+────────────────────────────────────────
+
+```text
+▓▓▓ NΞØ MELLØ
+────────────────────────────────────────
+Core Architect · NΞØ Protocol
+────────────────────────────────────────
+```

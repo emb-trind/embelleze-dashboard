@@ -1,0 +1,962 @@
+---
+import { Image } from 'astro:assets';
+import {
+  getOwnerSummary,
+  getFunnelStats,
+  getSourceStats,
+  getStalledLeads,
+  fetchFollowupLeads,
+  countFollowupByStatus,
+} from '../lib/db';
+import { fetchMetaInsights } from '../lib/meta';
+
+const ua = Astro.request.headers.get('user-agent') ?? '';
+if (/Mobi|Android|iPhone|iPad|iPod/i.test(ua)) {
+  return Astro.redirect('/');
+}
+
+const [legacySummary, legacyFunnel, legacySources, legacyStalled, followupCounts, followupLeads, metaInsights] = await Promise.all([
+  getOwnerSummary(),
+  getFunnelStats(),
+  getSourceStats(),
+  getStalledLeads(),
+  countFollowupByStatus(),
+  fetchFollowupLeads(),
+  fetchMetaInsights(),
+]);
+
+const hasFollowup = followupLeads.length > 0;
+
+const summary = hasFollowup ? {
+  total: followupLeads.length,
+  movimentados_hoje: followupLeads.filter(l => (l.attempt_count ?? 0) > 0).length,
+  novo: followupCounts['novo'] ?? 0,
+  qualificado: 0,
+  interessado: followupCounts['contato'] ?? 0,
+  pix_gerado: 0,
+  pix_pago: followupCounts['matricula'] ?? 0,
+} : legacySummary;
+
+const FUNNEL_COLOR: Record<string, string> = {
+  'Novos': '#a78bca', 'Qualificados': '#5f3080', 'Interessados': '#de583d',
+  'Contatos': '#de583d', 'Pix Gerado': '#f59e0b', 'Pagos': '#22c55e', 'Matrículas': '#22c55e',
+};
+
+const funnel = hasFollowup ? [
+  { label: 'Novos',     count: followupCounts['novo']      ?? 0 },
+  { label: 'Contatos',  count: followupCounts['contato']   ?? 0 },
+  { label: 'Matrículas',count: followupCounts['matricula'] ?? 0 },
+].map((step, _, arr) => {
+  const max = Math.max(...arr.map(s => s.count), 1);
+  return { ...step, percent: Math.round((step.count / max) * 100) };
+}) : legacyFunnel;
+
+const SOURCE_LABEL_PT: Record<string, string> = {
+  lp_manicure: 'LP Manicure', lp_cilios: 'LP Cílios', lp_sobrancelha: 'LP Sobrancelha',
+  lp_cabeleireiro: 'LP Cabeleireiro', lp_transforme: 'LP Transforme',
+  whatsapp_form: 'Form WhatsApp', lead_cadastro_manual: 'Cadastro manual',
+  site_footer_form: 'Rodapé do site', unknown_origem: 'Origem desconhecida', chatgpt: 'ChatGPT Ads',
+};
+
+const sources = hasFollowup
+  ? Array.from(
+      followupLeads.reduce((acc, lead) => {
+        const key = lead.source_canon || 'unknown_origem';
+        const cur = acc.get(key) || { fonte: key, total: 0, matriculas: 0 };
+        cur.total++;
+        if (lead.status_canon === 'matricula') cur.matriculas++;
+        acc.set(key, cur);
+        return acc;
+      }, new Map<string, { fonte: string; total: number; matriculas: number }>()).values()
+    )
+      .map(s => ({ ...s, taxa: s.total > 0 ? Math.round((s.matriculas / s.total) * 100) : 0 }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8)
+  : legacySources.slice(0, 8);
+
+const displaySources = sources.map(s => ({ ...s, fonte: SOURCE_LABEL_PT[s.fonte] ?? s.fonte }));
+
+const stalled = hasFollowup
+  ? followupLeads
+      .filter(l => l.status_canon === 'contato' && l.whatsapp_state !== 'replied')
+      .slice(0, 10)
+      .map(l => ({
+        phone: l.phone_e164.replace(/^\+55/, ''),
+        name: l.name,
+        horas_parado: 48,
+      }))
+  : legacyStalled.slice(0, 10);
+
+const campaignLeads = hasFollowup ? followupLeads.filter(l => l.utm_campaign || l.utm_source) : [];
+const campaignStats = Array.from(
+  campaignLeads.reduce((acc, lead) => {
+    const key = lead.utm_campaign || lead.utm_source || 'sem_campanha';
+    const cur = acc.get(key) || { campaign: key, total: 0, matriculas: 0, contatos: 0 };
+    cur.total++;
+    if (lead.status_canon === 'matricula') cur.matriculas++;
+    if (lead.status_canon === 'contato') cur.contatos++;
+    acc.set(key, cur);
+    return acc;
+  }, new Map<string, { campaign: string; total: number; matriculas: number; contatos: number }>()).values()
+).map(r => ({ ...r, taxa: r.total > 0 ? Math.round((r.matriculas / r.total) * 100) : 0 }))
+  .sort((a, b) => b.total - a.total)
+  .slice(0, 8);
+
+const taxaConversao = summary.total > 0 ? ((summary.pix_pago / summary.total) * 100).toFixed(1) : '0.0';
+
+const ACTION_PT: Record<string, string> = {
+  email_sent: 'Email enviado', email_opened: 'Email aberto',
+  whatsapp_sent: 'WA enviado', whatsapp_replied: 'WA respondeu',
+  sms_sent: 'SMS enviado', form_submit: 'Formulário', manual_contact: 'Contato manual',
+};
+
+const activityItems = [...followupLeads]
+  .sort((a, b) => {
+    const ta = a.next_action_at ? new Date(a.next_action_at).getTime() : 0;
+    const tb = b.next_action_at ? new Date(b.next_action_at).getTime() : 0;
+    return tb - ta;
+  })
+  .slice(0, 30)
+  .map(l => ({
+    name: l.name ?? l.phone_e164.replace(/^\+55/, ''),
+    status: l.status_canon,
+    action: ACTION_PT[l.last_action ?? ''] ?? l.last_action ?? l.status_canon,
+    attempts: l.attempt_count,
+    at: l.next_action_at,
+  }));
+
+const dateStr = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+---
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel · Embelleze</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --purple:      #5f3080;
+      --purple-dark: #3d1f55;
+      --orange:      #de583d;
+      --green:       #22c55e;
+      --bg:          #eef1f8;
+      --glass:       rgba(255,255,255,0.75);
+      --border:      rgba(255,255,255,0.9);
+      --border2:     rgba(200,210,240,0.55);
+      --text:        #1a1030;
+      --muted:       #7b6fa0;
+      --sidebar-w:   220px;
+      --feed-w:      296px;
+    }
+
+    html, body {
+      height: 100dvh;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout raiz ── */
+    .layout {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr var(--feed-w);
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      background: linear-gradient(170deg, #2d1540 0%, #4a2468 50%, #5f3080 100%);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .sidebar-top {
+      padding: 22px 18px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      flex-shrink: 0;
+    }
+
+    .sidebar-logo-img {
+      filter: brightness(0) invert(1);
+      opacity: 0.88;
+      height: 22px;
+      width: auto;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 10px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow-y: auto;
+    }
+
+    .nav-section {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: rgba(255,255,255,0.3);
+      padding: 14px 10px 6px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 10px;
+      border-radius: 9px;
+      color: rgba(255,255,255,0.6);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background .12s, color .12s;
+      white-space: nowrap;
+    }
+
+    .nav-item svg { width: 15px; height: 15px; flex-shrink: 0; stroke-width: 2; }
+
+    .nav-item:hover {
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.9);
+    }
+
+    .nav-item.active {
+      background: rgba(255,255,255,0.14);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .nav-item.active svg { stroke: #fff; }
+
+    .sidebar-footer {
+      padding: 14px 16px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-avatar-img {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1.5px solid rgba(255,255,255,0.25);
+      flex-shrink: 0;
+    }
+
+    .sidebar-user { flex: 1; min-width: 0; }
+
+    .sidebar-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sidebar-role {
+      font-size: 10px;
+      color: rgba(255,255,255,0.45);
+      margin-top: 1px;
+    }
+
+    .sidebar-logout {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 7px;
+      color: rgba(255,255,255,0.4);
+      text-decoration: none;
+      transition: background .12s, color .12s;
+      flex-shrink: 0;
+    }
+
+    .sidebar-logout:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .sidebar-logout svg { width: 14px; height: 14px; stroke-width: 2.2; }
+
+    /* ── Main ── */
+    .main {
+      overflow-y: auto;
+      padding: 28px 28px 40px;
+      position: relative;
+      background:
+        radial-gradient(ellipse 70% 45% at 10% 0%, rgba(95,48,128,.1) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 35% at 90% 100%, rgba(222,88,61,.06) 0%, transparent 55%),
+        var(--bg);
+    }
+
+    /* ── Page header ── */
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 22px;
+    }
+
+    .page-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+
+    .page-date {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 3px;
+      text-transform: capitalize;
+    }
+
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+
+    .refresh-btn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      background: var(--glass);
+      border: 1px solid var(--border2);
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--purple);
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      transition: background .12s;
+    }
+
+    .refresh-btn:hover { background: rgba(255,255,255,0.92); }
+    .refresh-btn svg { width: 13px; height: 13px; stroke-width: 2.2; }
+
+    .mobile-link {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      background: rgba(95,48,128,.08);
+      border: 1px solid rgba(95,48,128,.15);
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--purple);
+      text-decoration: none;
+      transition: background .12s;
+    }
+
+    .mobile-link:hover { background: rgba(95,48,128,.14); }
+
+    /* ── Glass card ── */
+    .glass-card {
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(95,48,128,.07), 0 1px 0 rgba(255,255,255,.9) inset;
+    }
+
+    /* ── KPI grid ── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .kpi { padding: 20px; }
+
+    .kpi-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+
+    .kpi-icon svg { width: 16px; height: 16px; stroke-width: 2; }
+    .kpi-icon--purple { background: rgba(95,48,128,.12); color: var(--purple); }
+    .kpi-icon--green  { background: rgba(34,197,94,.12);  color: #16a34a; }
+    .kpi-icon--orange { background: rgba(222,88,61,.12);  color: var(--orange); }
+    .kpi-icon--muted  { background: rgba(123,111,160,.1); color: var(--muted); }
+
+    .kpi__num {
+      font-size: 38px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -1.5px;
+      color: var(--text);
+    }
+
+    .kpi__num--green  { color: var(--green); }
+    .kpi__num--orange { color: var(--orange); }
+    .kpi__num--purple { color: var(--purple); }
+
+    .kpi__label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-top: 8px;
+    }
+
+    .kpi__sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+    /* ── Bento 2 colunas ── */
+    .bento-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .card-pad { padding: 20px; }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 14px;
+    }
+
+    /* ── Funil ── */
+    .funnel-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .funnel-row:last-child { margin-bottom: 0; }
+    .funnel-lbl { font-size: 12px; color: var(--muted); width: 80px; flex-shrink: 0; }
+    .funnel-track { flex: 1; height: 7px; background: rgba(95,48,128,.08); border-radius: 100px; overflow: hidden; }
+    .funnel-bar { height: 100%; border-radius: 100px; min-width: 4px; }
+    .funnel-num { font-size: 13px; font-weight: 700; width: 32px; text-align: right; flex-shrink: 0; }
+
+    /* ── Origens / Campanhas ── */
+    .source-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(95,48,128,.06);
+    }
+    .source-row:last-child { border-bottom: none; }
+    .source-row > div { min-width: 0; }
+    .source-name { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .source-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .source-badge {
+      background: rgba(34,197,94,.12);
+      color: #16a34a;
+      border-radius: 7px;
+      padding: 2px 9px;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .source-badge--zero { background: rgba(95,48,128,.07); color: var(--muted); }
+
+    /* ── Parados ── */
+    .stall-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid rgba(222,88,61,.07);
+    }
+    .stall-row:last-child { border-bottom: none; }
+    .stall-info { flex: 1; min-width: 0; }
+    .stall-name {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .stall-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .stall-time { font-size: 11px; color: var(--orange); flex-shrink: 0; }
+    .wa-btn {
+      background: #25d366;
+      color: #fff;
+      border-radius: 7px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-decoration: none;
+      flex-shrink: 0;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 18px 0;
+    }
+
+    /* ── Activity Feed ── */
+    .feed {
+      display: flex;
+      flex-direction: column;
+      background: rgba(255,255,255,0.62);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-left: 1px solid var(--border2);
+      overflow: hidden;
+    }
+
+    .feed-header {
+      padding: 18px 16px 12px;
+      border-bottom: 1px solid var(--border2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .feed-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--green);
+      border-radius: 50%;
+      flex-shrink: 0;
+      animation: pulse-live 2s infinite;
+    }
+
+    @keyframes pulse-live {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .4; transform: scale(0.75); }
+    }
+
+    .feed-count {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      background: rgba(95,48,128,.08);
+      padding: 2px 8px;
+      border-radius: 100px;
+    }
+
+    .feed-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+
+    .feed-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 9px 14px;
+      border-bottom: 1px solid rgba(95,48,128,.04);
+      transition: background .1s;
+    }
+
+    .feed-item:hover  { background: rgba(95,48,128,.03); }
+    .feed-item:last-child { border-bottom: none; }
+
+    .feed-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+
+    .feed-dot--novo      { background: var(--muted); }
+    .feed-dot--contato   { background: var(--orange); }
+    .feed-dot--matricula { background: var(--green); }
+    .feed-dot--perdido   { background: #94a3b8; }
+    .feed-dot--pausado   { background: #cbd5e1; }
+
+    .feed-info { flex: 1; min-width: 0; }
+
+    .feed-name {
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text);
+    }
+
+    .feed-action {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .feed-time {
+      font-size: 10px;
+      color: var(--muted);
+      flex-shrink: 0;
+      margin-top: 2px;
+      white-space: nowrap;
+    }
+
+    .feed-footer {
+      padding: 9px 14px;
+      border-top: 1px solid var(--border2);
+      font-size: 10px;
+      color: var(--muted);
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    /* ── Scrollbar fina ── */
+    .main::-webkit-scrollbar,
+    .feed-list::-webkit-scrollbar { width: 4px; }
+    .main::-webkit-scrollbar-track,
+    .feed-list::-webkit-scrollbar-track { background: transparent; }
+    .main::-webkit-scrollbar-thumb,
+    .feed-list::-webkit-scrollbar-thumb { background: rgba(95,48,128,.18); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <Image
+        src="/brand/logo_cor_horizontal.png"
+        alt="Instituto Embelleze Trindade"
+        width={140} height={22}
+        class="sidebar-logo-img"
+      />
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Navegação principal">
+      <div class="nav-section">Painel</div>
+
+      <a href="/desktop" class="nav-item active" aria-current="page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+        </svg>
+        Visão Geral
+      </a>
+
+      <a href="/leads" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        Contatos
+      </a>
+
+      <div class="nav-section">Canais</div>
+
+      <a href="/desktop#meta" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><path d="M8.5 12c0-1.5.8-3 2-3s2.2 1 3 2.5c.8-1.5 2-2.5 3-2.5s2 1.5 2 3-2 4-5 6c-3-2-5-4.5-5-6z"/>
+        </svg>
+        Meta Ads
+      </a>
+
+      <a href="/desktop#fontes" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+          <line x1="6" y1="20" x2="6" y2="14"/>
+        </svg>
+        Fontes
+      </a>
+
+      <div class="nav-section">Acesso</div>
+
+      <a href="/" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>
+        </svg>
+        Ver mobile
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <Image
+        src="/brand/avatar_e-trindade.png"
+        alt="Andreia"
+        width={30} height={30}
+        class="sidebar-avatar-img"
+      />
+      <div class="sidebar-user">
+        <div class="sidebar-name">Andreia</div>
+        <div class="sidebar-role">Gestão</div>
+      </div>
+      <a href="/api/auth/logout" class="sidebar-logout" aria-label="Sair">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </a>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Painel Geral</h1>
+        <p class="page-date">{dateStr}</p>
+      </div>
+      <div class="header-actions">
+        <button class="refresh-btn" onclick="location.reload()" aria-label="Atualizar dados">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </svg>
+          Atualizar
+        </button>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row">
+      <div class="glass-card kpi">
+        <div class="kpi-icon kpi-icon--purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+          </svg>
+        </div>
+        <div class="kpi__num">{summary.movimentados_hoje}</div>
+        <div class="kpi__label">Movimentados hoje</div>
+        <div class="kpi__sub">{summary.total} total</div>
+      </div>
+
+      <div class="glass-card kpi">
+        <div class="kpi-icon kpi-icon--green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div class={`kpi__num${summary.pix_pago > 0 ? ' kpi__num--green' : ''}`}>{summary.pix_pago}</div>
+        <div class="kpi__label">Matrículas</div>
+        <div class="kpi__sub">{summary.pix_gerado} pix gerado</div>
+      </div>
+
+      <div class="glass-card kpi">
+        <div class="kpi-icon kpi-icon--orange">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/>
+            <line x1="6" y1="20" x2="6" y2="16"/>
+          </svg>
+        </div>
+        <div class="kpi__num kpi__num--orange">{taxaConversao}%</div>
+        <div class="kpi__label">Taxa de conversão</div>
+        <div class="kpi__sub">de {summary.total} leads</div>
+      </div>
+
+      <div class="glass-card kpi">
+        <div class="kpi-icon kpi-icon--muted">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <div class={`kpi__num${stalled.length > 0 ? ' kpi__num--orange' : ''}`}>{stalled.length}</div>
+        <div class="kpi__label">Parados +48h</div>
+        <div class="kpi__sub">{stalled.length > 0 ? 'precisam contato' : 'tudo em dia'}</div>
+      </div>
+    </div>
+
+    <!-- Funil + Origens -->
+    <div class="bento-2" id="fontes">
+      <div class="glass-card card-pad">
+        <div class="card-title">Funil de vendas</div>
+        {funnel.map(step => (
+          <div class="funnel-row">
+            <span class="funnel-lbl">{step.label}</span>
+            <div class="funnel-track">
+              <div class="funnel-bar" style={`width:${step.percent}%;background:${FUNNEL_COLOR[step.label] ?? '#5f3080'}`}></div>
+            </div>
+            <span class="funnel-num">{step.count}</span>
+          </div>
+        ))}
+      </div>
+
+      <div class="glass-card card-pad">
+        <div class="card-title">Origem dos leads</div>
+        {displaySources.length > 0 ? displaySources.map(s => (
+          <div class="source-row">
+            <div>
+              <div class="source-name">{s.fonte}</div>
+              <div class="source-meta">{s.total} leads · {s.matriculas} matrículas</div>
+            </div>
+            <span class={`source-badge${s.taxa === 0 ? ' source-badge--zero' : ''}`}>{s.taxa}%</span>
+          </div>
+        )) : <div class="empty-state">Sem dados de origem</div>}
+      </div>
+    </div>
+
+    <!-- Parados + Campanhas -->
+    <div class="bento-2" id="meta">
+      <div class="glass-card card-pad">
+        <div class="card-title">Contatos parados</div>
+        {stalled.length === 0
+          ? <div class="empty-state">Nenhum contato parado</div>
+          : stalled.map(l => (
+            <div class="stall-row">
+              <div class="stall-info">
+                <div class="stall-name">{l.name ?? l.phone}</div>
+                <div class="stall-meta">{l.phone}</div>
+              </div>
+              <span class="stall-time">{Math.floor(l.horas_parado / 24)}d parado</span>
+              <a href={`https://wa.me/55${l.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener" class="wa-btn">WA</a>
+            </div>
+          ))
+        }
+      </div>
+
+      <div class="glass-card card-pad">
+        <div class="card-title">Top campanhas UTM</div>
+        {campaignStats.length === 0
+          ? <div class="empty-state">Sem campanhas rastreadas por UTM</div>
+          : campaignStats.map(row => (
+            <div class="source-row">
+              <div>
+                <div class="source-name">{row.campaign}</div>
+                <div class="source-meta">{row.total} leads · {row.matriculas} matrículas · {row.contatos} contatos</div>
+              </div>
+              <span class={`source-badge${row.taxa === 0 ? ' source-badge--zero' : ''}`}>{row.taxa}%</span>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+
+    <!-- Meta API insights -->
+    {metaInsights.length > 0 && (
+      <div class="glass-card card-pad" style="margin-bottom:14px">
+        <div class="card-title">
+          Campanhas Meta (API) ·
+          <span style="color:var(--text);font-weight:800">
+            {' '}R$ {metaInsights.reduce((s, c) => s + c.spend, 0).toFixed(2).replace('.', ',')}
+          </span>
+          <span style="font-weight:400;text-transform:none;letter-spacing:0"> gasto total</span>
+        </div>
+        {metaInsights.map(c => (
+          <div class="source-row">
+            <div>
+              <div class="source-name">{c.campaign_name}</div>
+              <div class="source-meta">
+                {c.impressions.toLocaleString('pt-BR')} imp · {c.clicks} cliques · CPC R$ {c.cpc.toFixed(2).replace('.', ',')} · CPM R$ {c.cpm.toFixed(2).replace('.', ',')} · {c.landing_page_views} LPV
+              </div>
+            </div>
+            <span class="source-badge">R$ {c.spend.toFixed(2).replace('.', ',')}</span>
+          </div>
+        ))}
+      </div>
+    )}
+
+  </main>
+
+  <!-- ── Activity Feed ── -->
+  <div class="feed" role="complementary" aria-label="Atividade recente">
+    <div class="feed-header">
+      <div class="feed-title">
+        <span class="live-dot" aria-hidden="true"></span>
+        Atividade recente
+      </div>
+      <span class="feed-count">{activityItems.length}</span>
+    </div>
+
+    <div class="feed-list" id="feed-list">
+      {activityItems.map(item => (
+        <div class="feed-item">
+          <div class={`feed-dot feed-dot--${item.status}`} aria-hidden="true"></div>
+          <div class="feed-info">
+            <div class="feed-name">{item.name}</div>
+            <div class="feed-action">{item.action}</div>
+          </div>
+          <div class="feed-time" data-ts={item.at ?? ''}></div>
+        </div>
+      ))}
+    </div>
+
+    <div class="feed-footer">Atualiza a cada 30s</div>
+  </div>
+
+</div>
+
+<script is:inline>
+  function relTime(iso) {
+    if (!iso) return '';
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (Math.abs(diff) < 60)    return 'agora';
+    if (Math.abs(diff) < 3600)  return Math.floor(Math.abs(diff) / 60) + 'min';
+    if (Math.abs(diff) < 86400) return Math.floor(Math.abs(diff) / 3600) + 'h';
+    return Math.floor(Math.abs(diff) / 86400) + 'd';
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  document.querySelectorAll('[data-ts]').forEach(function(el) {
+    var ts = el.getAttribute('data-ts');
+    if (ts) el.textContent = relTime(ts);
+  });
+
+  var ACTION_MAP = {
+    email_sent: 'Email enviado', email_opened: 'Email aberto',
+    whatsapp_sent: 'WA enviado', whatsapp_replied: 'WA respondeu',
+    sms_sent: 'SMS enviado', form_submit: 'Formulário', manual_contact: 'Contato manual',
+  };
+
+  async function refreshFeed() {
+    try {
+      var res = await fetch('/api/activity');
+      if (!res.ok) return;
+      var items = await res.json();
+      var list = document.getElementById('feed-list');
+      if (!list || !items.length) return;
+      list.innerHTML = items.map(function(item) {
+        var action = ACTION_MAP[item.action] || item.action || item.status || '';
+        return '<div class="feed-item">'
+          + '<div class="feed-dot feed-dot--' + esc(item.status) + '" aria-hidden="true"></div>'
+          + '<div class="feed-info">'
+          + '<div class="feed-name">' + esc(item.name) + '</div>'
+          + '<div class="feed-action">' + esc(action) + '</div>'
+          + '</div>'
+          + '<div class="feed-time">' + esc(relTime(item.at)) + '</div>'
+          + '</div>';
+      }).join('');
+    } catch (_) {}
+  }
+
+  setInterval(refreshFeed, 30000);
+</script>
+
+</body>
+</html>
