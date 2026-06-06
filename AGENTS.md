@@ -9,6 +9,8 @@ Leitura  : obrigatória antes de qualquer ação
 ========================================
 ```
 
+checar https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users para entender o processo de onboarding de aplicativos empresariais no WhatsApp, que é relevante para a fase atual de scaffold do projeto.
+
 ## ⟠ Primeira leitura
 
 1. Este arquivo `dev-agent.md`
