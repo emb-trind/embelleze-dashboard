@@ -15,7 +15,7 @@ const novo = hasFollowup ? (counts['novo'] ?? 0) : (counts['NOVO'] ?? 0);
 const contato = hasFollowup ? (counts['contato'] ?? 0) : (counts['INTERESSADO'] ?? 0);
 const matricula = hasFollowup
   ? (counts['matricula'] ?? 0)
-  : (counts['PIX_GERADO'] ?? 0) + (counts['PIX_PAGO'] ?? 0);
+  : (counts['CHECKOUT_ENVIADO'] ?? 0) + (counts['CHECKOUT_PAGO'] ?? 0);
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -35,8 +35,8 @@ function waLink(phone: string): string {
 const STATUS_LABEL: Record<string, string> = {
   INTERESSADO: 'Interessado',
   QUALIFICADO: 'Qualificado',
-  PIX_GERADO:  'Pix Gerado',
-  PIX_PAGO:    'Pago',
+  CHECKOUT_ENVIADO: 'Checkout Enviado',
+  CHECKOUT_PAGO:    'Matriculado',
   NOVO:        'Novo',
   novo: 'Novo',
   contato: 'Contato',
@@ -59,7 +59,7 @@ const FILTERS = hasFollowup
       { value: 'NOVO', label: 'Novos', count: novo },
       { value: 'INTERESSADO', label: 'Interessados', count: contato },
       { value: 'QUALIFICADO', label: 'Qualificados', count: counts['QUALIFICADO'] ?? 0 },
-      { value: 'PIX_PAGO,PIX_GERADO', label: 'Convertidos', count: matricula },
+      { value: 'CHECKOUT_PAGO,CHECKOUT_ENVIADO', label: 'Convertidos', count: matricula },
     ];
 
 function normalizePhone(raw: string): string {
@@ -260,9 +260,9 @@ function normalizePhone(raw: string): string {
     .lead-card--pausado::before     { background: #f59e0b; }
     .lead-card--unknown_status::before { background: #94a3b8; }
     .lead-card--qualificado::before { background: var(--purple); }
-    .lead-card--interessado::before { background: var(--orange); }
-    .lead-card--pix_gerado::before  { background: var(--green); }
-    .lead-card--pix_pago::before    { background: var(--green); }
+    .lead-card--interessado::before { background: var(--purple); }
+    .lead-card--checkout_enviado::before  { background: var(--green); }
+    .lead-card--checkout_pago::before    { background: var(--green); }
 
     .lead-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
     .lead-name { font-size: 15px; font-weight: 700; color: var(--text); }
@@ -405,13 +405,13 @@ function normalizePhone(raw: string): string {
       const statusKey = hasFollowup
         ? (lead.status_canon || 'unknown_status')
         : (lead.status?.toLowerCase() ?? 'novo');
-      const isConvertido = statusKey === 'pix_pago' || statusKey === 'pix_gerado' || statusKey === 'matricula';
+      const statusLabelKey = ((hasFollowup ? lead.status_canon : lead.status) || 'unknown_status') as keyof typeof STATUS_LABEL;
+      const isConvertido = statusKey === 'checkout_pago' || statusKey === 'checkout_enviado' || statusKey === 'matricula';
       const rawPhone = hasFollowup ? (lead.phone_e164 || '') : (lead.phone || '');
       const phone = normalizePhone(rawPhone);
       const displayPhone = phone.length >= 10
         ? `(${phone.slice(0,2)}) ${phone.slice(2,7)}-${phone.slice(7)}`
         : rawPhone;
-      const statusLabelKey = hasFollowup ? lead.status_canon : lead.status;
       const sourceLabel = hasFollowup ? lead.source_canon : lead.origin;
       const mediaLabel = hasFollowup ? lead.media_canon : null;
       const utmLabel = hasFollowup ? lead.utm_source : lead.utm_source;
@@ -437,7 +437,11 @@ function normalizePhone(raw: string): string {
             {mediaLabel && <span class="tag">{mediaLabel}</span>}
             {ownerLabel && <span class="tag">Resp.: {ownerLabel}</span>}
             {channelState && <span class="tag">WA: {channelState}</span>}
-            {!hasFollowup && lead.probeltec_synced_at && <span class="tag tag--crm">No sistema</span>}
+            {lead.probeltec_status ? (
+              <span class="tag tag--crm" title="Status no CRM">CRM: {lead.probeltec_status}</span>
+            ) : (
+              !hasFollowup && lead.probeltec_synced_at && <span class="tag tag--crm">No sistema</span>
+            )}
           </div>
 
           <div class="lead-actions">
