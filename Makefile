@@ -1,7 +1,7 @@
 WORKSPACE_ROOT := $(shell cd .. && pwd)
 
 .DEFAULT_GOAL := help
-.PHONY: help install add dev build preview check start sync audit deploy clean reset
+.PHONY: help install add dev build preview check start sync audit deploy test clean reset
 
 help:
 	@echo ""
@@ -17,6 +17,7 @@ help:
 	@echo "  preview        preview do último build"
 	@echo "  audit          auditoria de vulnerabilidades"
 	@echo "  deploy         check + build"
+	@echo "  test           roda os testes unitários (vitest)"
 	@echo "  clean          remove dist/ e .astro/"
 	@echo "  reset          clean + remove node_modules + install"
 	@echo ""
@@ -55,6 +56,10 @@ deploy:
 	@echo ""
 	@echo "  ok — push para o branch conectado ao Railway."
 	@echo ""
+
+test:
+	pnpm test
+
 
 clean:
 	rm -rf dist .astro

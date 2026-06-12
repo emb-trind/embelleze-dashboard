@@ -1,6 +1,5 @@
 import pg from 'pg';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+
 const { Pool } = pg;
 
 const pool = new Pool({
@@ -310,13 +309,6 @@ export interface FollowupLead {
   last_result: string | null;
   block_reason: string | null;
   probeltec_status: string | null;
-}
-
-function getFollowupStatePath(): string {
-  return (
-    process.env.FOLLOWUP_STATE_PATH
-    || path.join(process.cwd(), 'data', 'followup-state.json')
-  );
 }
 
 export async function fetchFollowupLeads(statusFilter?: string): Promise<FollowupLead[]> {

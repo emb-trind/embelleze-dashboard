@@ -10,8 +10,6 @@ import {
 } from '../lib/db';
 import { fetchMetaInsights } from '../lib/meta';
 import { formatSource } from '../lib/taxonomy';
-import { resolveSourceLabel } from '../lib/source-labels';
-
 const ua = Astro.request.headers.get('user-agent') ?? '';
 if (/Mobi|Android|iPhone|iPad|iPod/i.test(ua)) {
   return Astro.redirect('/');
