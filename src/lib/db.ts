@@ -15,6 +15,10 @@ pool.on('error', (err) => {
   console.error('[DASH-DB] idle client error:', err.message);
 });
 
+const UTM_COLUMNS = ['utm_source', 'utm_medium', 'utm_campaign'] as const;
+const PROBELTEC_COLUMNS = ['probeltec_status', 'probeltec_synced_at'] as const;
+const OPTIONAL_LEAD_COLUMNS = [...UTM_COLUMNS, ...PROBELTEC_COLUMNS];
+
 async function getAvailableColumns(client: pg.PoolClient, columns: string[]): Promise<Set<string>> {
   const res = await client.query<{ column_name: string }>(
     `
@@ -55,7 +59,7 @@ export async function fetchLeads(status?: string): Promise<Lead[]> {
       : [];
     const where = statuses.length > 0 ? `WHERE status = ANY($1::text[])` : '';
     const params = statuses.length > 0 ? [statuses] : [];
-    const availCols = await getAvailableColumns(client, ['utm_source', 'utm_medium', 'utm_campaign', 'probeltec_status', 'probeltec_synced_at']);
+    const availCols = await getAvailableColumns(client, OPTIONAL_LEAD_COLUMNS);
     const utmSourceSelect = availCols.has('utm_source') ? 'utm_source' : 'NULL::text AS utm_source';
     const utmMediumSelect = availCols.has('utm_medium') ? 'utm_medium' : 'NULL::text AS utm_medium';
     const utmCampaignSelect = availCols.has('utm_campaign') ? 'utm_campaign' : 'NULL::text AS utm_campaign';
@@ -321,7 +325,7 @@ export async function fetchFollowupLeads(statusFilter?: string): Promise<Followu
   try {
     client = await pool.connect();
 
-    const availCols = await getAvailableColumns(client, ['utm_source', 'utm_medium', 'utm_campaign', 'probeltec_status']);
+    const availCols = await getAvailableColumns(client, [...UTM_COLUMNS, 'probeltec_status']);
     const utmSourceSel = availCols.has('utm_source') ? 'utm_source' : 'NULL::text AS utm_source';
     const utmMediumSel = availCols.has('utm_medium') ? 'utm_medium AS media_canon' : 'NULL::text AS media_canon';
     const utmCampaignSel = availCols.has('utm_campaign') ? 'utm_campaign' : 'NULL::text AS utm_campaign';

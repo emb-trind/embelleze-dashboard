@@ -9,6 +9,7 @@ import {
   countFollowupByStatus,
 } from '../lib/db';
 import { fetchMetaInsights } from '../lib/meta';
+import { resolveSourceLabel } from '../lib/source-labels';
 
 const ua = Astro.request.headers.get('user-agent') ?? '';
 if (/Mobi|Android|iPhone|iPad|iPod/i.test(ua)) {
@@ -51,16 +52,6 @@ const funnel = hasFollowup ? [
   return { ...step, percent: Math.round((step.count / max) * 100) };
 }) : legacyFunnel;
 
-const SOURCE_LABEL_PT: Record<string, string> = {
-  lp_manicure: 'LP Manicure', lp_cilios: 'LP Cílios', lp_sobrancelha: 'LP Sobrancelha',
-  lp_cabeleireiro: 'LP Cabeleireiro', lp_transforme: 'LP Transforme',
-  whatsapp_form: 'Form WhatsApp', lead_cadastro_manual: 'Cadastro manual',
-  site_footer_form: 'Rodapé do site', unknown_origem: 'Origem desconhecida', chatgpt: 'ChatGPT Ads',
-  instagram: 'Instagram', ig: 'Instagram', ig_direct: 'Instagram Direct',
-  facebook: 'Facebook', fb: 'Facebook', messenger: 'Messenger', fb_messenger: 'Messenger',
-  whatsapp_baileys: 'WhatsApp', landing: 'Landing Page', 'direct-wa': 'WhatsApp Direto',
-};
-
 const sources = hasFollowup
   ? Array.from(
       followupLeads.reduce((acc, lead) => {
@@ -77,7 +68,7 @@ const sources = hasFollowup
       .slice(0, 8)
   : legacySources.slice(0, 8);
 
-const displaySources = sources.map(s => ({ ...s, fonte: SOURCE_LABEL_PT[String(s.fonte).toLowerCase()] ?? s.fonte }));
+const displaySources = sources.map(s => ({ ...s, fonte: resolveSourceLabel(s.fonte) }));
 
 const stalled = hasFollowup
   ? followupLeads
