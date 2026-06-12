@@ -7,6 +7,7 @@ import {
   fetchFollowupLeads,
   countFollowupByStatus,
 } from '../lib/db';
+import { resolveSourceLabel } from '../lib/source-labels';
 import { getLocationStats } from '../lib/redis';
 import { fetchMetaInsights } from '../lib/meta';
 
@@ -76,23 +77,7 @@ const sources = hasFollowup
       .slice(0, 10)
   : legacySources;
 
-const SOURCE_LABEL_PT: Record<string, string> = {
-  lp_manicure: 'LP Manicure',
-  lp_cilios: 'LP Cílios',
-  lp_sobrancelha: 'LP Sobrancelha',
-  lp_cabeleireiro: 'LP Cabeleireiro',
-  lp_transforme: 'LP Transforme',
-  whatsapp_form: 'Form WhatsApp',
-  lead_cadastro_manual: 'Cadastro manual',
-  site_footer_form: 'Rodapé do site',
-  unknown_origem: 'Origem desconhecida',
-  chatgpt: 'ChatGPT Ads',
-};
-
-const displaySources = sources.map((s) => ({
-  ...s,
-  fonte: SOURCE_LABEL_PT[s.fonte] ?? s.fonte,
-}));
+const displaySources = sources.map((s) => ({ ...s, fonte: resolveSourceLabel(s.fonte) }));
 
 const stalled = hasFollowup
   ? followupLeads

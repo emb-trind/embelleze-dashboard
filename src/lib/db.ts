@@ -15,7 +15,11 @@ pool.on('error', (err) => {
   console.error('[DASH-DB] idle client error:', err.message);
 });
 
-async function getAvailableUtmColumns(client: pg.PoolClient): Promise<Set<string>> {
+const UTM_COLUMNS = ['utm_source', 'utm_medium', 'utm_campaign'] as const;
+const PROBELTEC_COLUMNS = ['probeltec_status', 'probeltec_synced_at'] as const;
+const OPTIONAL_LEAD_COLUMNS = [...UTM_COLUMNS, ...PROBELTEC_COLUMNS];
+
+async function getAvailableColumns(client: pg.PoolClient, columns: string[]): Promise<Set<string>> {
   const res = await client.query<{ column_name: string }>(
     `
       SELECT column_name
@@ -24,7 +28,7 @@ async function getAvailableUtmColumns(client: pg.PoolClient): Promise<Set<string
         AND table_schema = ANY(current_schemas(false))
         AND column_name = ANY($1::text[])
     `,
-    [['utm_source', 'utm_medium', 'utm_campaign']],
+    [columns],
   );
   return new Set(res.rows.map((row) => row.column_name));
 }
@@ -55,16 +59,18 @@ export async function fetchLeads(status?: string): Promise<Lead[]> {
       : [];
     const where = statuses.length > 0 ? `WHERE status = ANY($1::text[])` : '';
     const params = statuses.length > 0 ? [statuses] : [];
-    const utmColumns = await getAvailableUtmColumns(client);
-    const utmSourceSelect = utmColumns.has('utm_source') ? 'utm_source' : 'NULL::text AS utm_source';
-    const utmMediumSelect = utmColumns.has('utm_medium') ? 'utm_medium' : 'NULL::text AS utm_medium';
-    const utmCampaignSelect = utmColumns.has('utm_campaign') ? 'utm_campaign' : 'NULL::text AS utm_campaign';
+    const availCols = await getAvailableColumns(client, OPTIONAL_LEAD_COLUMNS);
+    const utmSourceSelect = availCols.has('utm_source') ? 'utm_source' : 'NULL::text AS utm_source';
+    const utmMediumSelect = availCols.has('utm_medium') ? 'utm_medium' : 'NULL::text AS utm_medium';
+    const utmCampaignSelect = availCols.has('utm_campaign') ? 'utm_campaign' : 'NULL::text AS utm_campaign';
+    const probeltecStatusSelect = availCols.has('probeltec_status') ? 'probeltec_status' : 'NULL::text AS probeltec_status';
+    const probeltecSyncedSelect = availCols.has('probeltec_synced_at') ? 'probeltec_synced_at' : 'NULL::timestamptz AS probeltec_synced_at';
 
     const res = await client.query<Lead>(
       `SELECT phone, name, origin, course_interest, status, last_message,
               ${utmSourceSelect}, ${utmMediumSelect}, ${utmCampaignSelect},
               COALESCE(updated_at, NOW()) AS updated_at,
-              probeltec_synced_at, probeltec_status
+              ${probeltecSyncedSelect}, ${probeltecStatusSelect}
        FROM leads
        ${where}
        ORDER BY
@@ -203,7 +209,7 @@ export async function getSourceStats(): Promise<SourceStat[]> {
   let client;
   try {
     client = await pool.connect();
-    const utmColumns = await getAvailableUtmColumns(client);
+    const utmColumns = await getAvailableColumns(client, ['utm_source']);
     const sourceExpr = utmColumns.has('utm_source')
       ? `COALESCE(NULLIF(TRIM(utm_source), ''), NULLIF(TRIM(origin), ''), 'direto')`
       : `COALESCE(NULLIF(TRIM(origin), ''), 'direto')`;
@@ -318,10 +324,18 @@ export async function fetchFollowupLeads(statusFilter?: string): Promise<Followu
   let client;
   try {
     client = await pool.connect();
-    
+
+    const availCols = await getAvailableColumns(client, [...UTM_COLUMNS, 'probeltec_status']);
+    const utmSourceSel = availCols.has('utm_source') ? 'utm_source' : 'NULL::text AS utm_source';
+    const utmMediumSel = availCols.has('utm_medium') ? 'utm_medium AS media_canon' : 'NULL::text AS media_canon';
+    const utmCampaignSel = availCols.has('utm_campaign') ? 'utm_campaign' : 'NULL::text AS utm_campaign';
+    const probeltecStatusSel = availCols.has('probeltec_status') ? 'probeltec_status' : 'NULL::text AS probeltec_status';
+
     // 1. Buscar leads base
     const leadsRes = await client.query(`
-      SELECT phone as lead_id, phone as phone_e164, email, name, status, origin as source_canon, utm_medium as media_canon, utm_source, utm_campaign, probeltec_status
+      SELECT phone AS lead_id, phone AS phone_e164, email, name, status,
+             origin AS source_canon, ${utmMediumSel},
+             ${utmSourceSel}, ${utmCampaignSel}, ${probeltecStatusSel}
       FROM leads
     `);
     
