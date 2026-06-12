@@ -87,11 +87,21 @@ const SOURCE_LABEL_PT: Record<string, string> = {
   site_footer_form: 'Rodapé do site',
   unknown_origem: 'Origem desconhecida',
   chatgpt: 'ChatGPT Ads',
+  instagram: 'Instagram',
+  ig: 'Instagram',
+  ig_direct: 'Instagram Direct',
+  facebook: 'Facebook',
+  fb: 'Facebook',
+  messenger: 'Messenger',
+  fb_messenger: 'Messenger',
+  whatsapp_baileys: 'WhatsApp',
+  landing: 'Landing Page',
+  'direct-wa': 'WhatsApp Direto',
 };
 
 const displaySources = sources.map((s) => ({
   ...s,
-  fonte: SOURCE_LABEL_PT[s.fonte] ?? s.fonte,
+  fonte: SOURCE_LABEL_PT[String(s.fonte).toLowerCase()] ?? s.fonte,
 }));
 
 const stalled = hasFollowup
