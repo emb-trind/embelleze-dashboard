@@ -2,10 +2,12 @@ export interface MetaCampaign {
   campaign_name: string;
   spend: number;
   impressions: number;
+  reach: number;
   clicks: number;
   cpc: number;
   cpm: number;
   landing_page_views: number;
+  leads: number;
 }
 
 // ── Variáveis de ambiente suportadas ─────────────────────────────
@@ -83,7 +85,7 @@ export async function fetchMetaInsights(): Promise<MetaCampaign[]> {
 
   try {
     const url = new URL(`https://graph.facebook.com/v19.0/act_${accountId}/insights`);
-    url.searchParams.set('fields', 'campaign_name,spend,impressions,clicks,cpc,cpm,actions');
+    url.searchParams.set('fields', 'campaign_name,spend,impressions,reach,clicks,cpc,cpm,actions');
     url.searchParams.set('level', level);
     url.searchParams.set('access_token', token);
 
@@ -106,14 +108,19 @@ export async function fetchMetaInsights(): Promise<MetaCampaign[]> {
         const lpv = (item.actions ?? []).find(
           (a: { action_type: string; value: string }) => a.action_type === 'landing_page_view',
         );
+        const leadAction = (item.actions ?? []).find(
+          (a: { action_type: string; value: string }) => a.action_type === 'lead',
+        );
         return {
           campaign_name:      String(item.campaign_name ?? ''),
           spend:              parseFloat(item.spend ?? '0'),
           impressions:        parseInt(item.impressions ?? '0', 10),
+          reach:              parseInt(item.reach ?? '0', 10),
           clicks:             parseInt(item.clicks ?? '0', 10),
           cpc:                parseFloat(item.cpc ?? '0'),
           cpm:                parseFloat(item.cpm ?? '0'),
           landing_page_views: lpv ? parseInt(lpv.value, 10) : 0,
+          leads:              leadAction ? parseInt(leadAction.value, 10) : 0,
         };
       })
       .filter(c => includeTest || !TEST_PATTERN.test(c.campaign_name))

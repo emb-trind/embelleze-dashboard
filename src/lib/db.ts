@@ -312,16 +312,95 @@ function getFollowupStatePath(): string {
 }
 
 export async function fetchFollowupLeads(statusFilter?: string): Promise<FollowupLead[]> {
-  const filePath = getFollowupStatePath();
+  if (!process.env.DATABASE_URL) return [];
+  let client;
   try {
-    const raw = await readFile(filePath, 'utf-8');
-    const parsed = JSON.parse(raw) as FollowupLead[];
-    const rows = Array.isArray(parsed) ? parsed : [];
+    client = await pool.connect();
+    
+    // 1. Buscar leads base
+    const leadsRes = await client.query(`
+      SELECT phone as lead_id, phone as phone_e164, email, name, status, origin as source_canon, utm_medium as media_canon, utm_source, utm_campaign
+      FROM leads
+    `);
+    
+    // 2. Buscar eventos para agregação
+    const eventsRes = await client.query(`
+      SELECT lead_id, event_type, result, notes, created_at 
+      FROM followup_events 
+      ORDER BY created_at ASC
+    `).catch(() => ({ rows: [] })); // Tabela pode não existir ainda
+
+    const stateMap = new Map<string, FollowupLead>();
+    
+    for (const l of leadsRes.rows) {
+      let canonStatus = 'novo';
+      if (l.status === 'QUALIFICADO') canonStatus = 'contato';
+      if (l.status === 'INTERESSADO') canonStatus = 'contato';
+      if (l.status === 'PIX_GERADO') canonStatus = 'matricula';
+      if (l.status === 'PIX_PAGO') canonStatus = 'matricula';
+      
+      stateMap.set(l.lead_id, {
+        lead_id: l.lead_id,
+        phone_e164: l.phone_e164,
+        email: l.email,
+        name: l.name,
+        status_canon: canonStatus as any,
+        source_canon: l.source_canon || 'direto',
+        media_canon: l.media_canon || '',
+        utm_source: l.utm_source,
+        utm_campaign: l.utm_campaign,
+        owner: 'bella',
+        email_state: 'pending',
+        whatsapp_state: 'pending',
+        sms_state: 'pending',
+        attempt_count: 0,
+        next_action_at: null,
+        next_channel: null,
+        last_action: null,
+        last_result: null,
+        block_reason: null
+      });
+    }
+
+    const EVENT_TO_STATE: Record<string, [string, string|null]> = {
+      'email.queued': ['email_state', 'queued'],
+      'email.sent': ['email_state', 'sent'],
+      'email.delivered': ['email_state', 'delivered'],
+      'email.opened': ['email_state', 'opened'],
+      'email.clicked': ['email_state', 'clicked'],
+      'email.replied': ['email_state', 'replied'],
+      'email.failed': ['email_state', 'failed'],
+      'whatsapp.queued': ['whatsapp_state', 'queued'],
+      'whatsapp.sent': ['whatsapp_state', 'sent'],
+      'whatsapp.delivered': ['whatsapp_state', 'delivered'],
+      'whatsapp.replied': ['whatsapp_state', 'replied'],
+      'whatsapp.failed': ['whatsapp_state', 'failed']
+    };
+
+    for (const ev of eventsRes.rows) {
+      const row = stateMap.get(ev.lead_id);
+      if (!row) continue;
+      
+      const mapping = EVENT_TO_STATE[ev.event_type];
+      if (mapping) {
+        const [target_key, fixed_value] = mapping;
+        (row as any)[target_key] = fixed_value;
+      }
+      
+      row.last_action = ev.event_type;
+      row.last_result = ev.result || (mapping ? mapping[1] : null);
+      row.attempt_count += 1;
+    }
+
+    const allRows = Array.from(stateMap.values());
     const filter = (statusFilter || '').split(',').map((s) => s.trim()).filter(Boolean);
-    if (filter.length === 0) return rows;
-    return rows.filter((row) => filter.includes(row.status_canon));
-  } catch {
+    if (filter.length === 0) return allRows;
+    return allRows.filter((row) => filter.includes(row.status_canon));
+  } catch (err) {
+    console.error('[DASH-DB] fetchFollowupLeads error:', err);
     return [];
+  } finally {
+    client?.release();
   }
 }
 

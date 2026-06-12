@@ -914,7 +914,7 @@ const FUNNEL_COLOR: Record<string, string> = {
                 <div>
                   <div class="source-name">{c.campaign_name}</div>
                   <div class="source-meta">
-                    {c.impressions.toLocaleString('pt-BR')} imp · {c.clicks} cliques · CPC R$ {c.cpc.toFixed(2).replace('.', ',')} · CPM R$ {c.cpm.toFixed(2).replace('.', ',')} · {c.landing_page_views} LPV
+                    {c.impressions.toLocaleString('pt-BR')} imp · {c.reach.toLocaleString('pt-BR')} alc · {c.leads} leads · CPL R$ {(c.leads > 0 ? c.spend / c.leads : 0).toFixed(2).replace('.', ',')} · CPC R$ {c.cpc.toFixed(2).replace('.', ',')}
                   </div>
                 </div>
                 <span class="source-badge">R$ {c.spend.toFixed(2).replace('.', ',')}</span>
