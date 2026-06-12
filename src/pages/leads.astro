@@ -13,8 +13,8 @@ const counts = hasFollowup ? await countFollowupByStatus() : await countByStatus
 const total = Object.values(counts).reduce((a, b) => a + b, 0);
 const novo = hasFollowup ? (counts['novo'] ?? 0) : (counts['NOVO'] ?? 0);
 const contato = hasFollowup ? (counts['contato'] ?? 0) : (counts['INTERESSADO'] ?? 0);
-const matricula = filterStatus === 'CHECKOUT_PAGO,CHECKOUT_ENVIADO'
-  ? leads.length
+const matricula = hasFollowup
+  ? (counts['matricula'] ?? 0)
   : (counts['CHECKOUT_ENVIADO'] ?? 0) + (counts['CHECKOUT_PAGO'] ?? 0);
 
 function timeAgo(iso: string): string {
@@ -37,7 +37,6 @@ const STATUS_LABEL: Record<string, string> = {
   QUALIFICADO: 'Qualificado',
   CHECKOUT_ENVIADO: 'Checkout Enviado',
   CHECKOUT_PAGO:    'Matriculado',
-  UNKNOWN:     'Desconhecido',
   NOVO:        'Novo',
   novo: 'Novo',
   contato: 'Contato',
@@ -406,7 +405,7 @@ function normalizePhone(raw: string): string {
       const statusKey = hasFollowup
         ? (lead.status_canon || 'unknown_status')
         : (lead.status?.toLowerCase() ?? 'novo');
-      const statusLabelKey = (lead.status || 'UNKNOWN') as keyof typeof STATUS_LABEL;
+      const statusLabelKey = ((hasFollowup ? lead.status_canon : lead.status) || 'unknown_status') as keyof typeof STATUS_LABEL;
       const isConvertido = statusKey === 'checkout_pago' || statusKey === 'checkout_enviado' || statusKey === 'matricula';
       const rawPhone = hasFollowup ? (lead.phone_e164 || '') : (lead.phone || '');
       const phone = normalizePhone(rawPhone);
