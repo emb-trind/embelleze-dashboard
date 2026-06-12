@@ -34,13 +34,14 @@ export interface Lead {
   name: string | null;
   origin: string | null;
   course_interest: string | null;
-  status: 'NOVO' | 'QUALIFICADO' | 'INTERESSADO' | 'PIX_GERADO' | 'PIX_PAGO';
+  status: 'NOVO' | 'QUALIFICADO' | 'INTERESSADO' | 'CHECKOUT_ENVIADO' | 'CHECKOUT_PAGO';
   last_message: string | null;
   utm_source: string | null;
   utm_medium: string | null;
   utm_campaign: string | null;
   updated_at: string;
   probeltec_synced_at: string | null;
+  probeltec_status: string | null;
 }
 
 export async function fetchLeads(status?: string): Promise<Lead[]> {
@@ -63,7 +64,7 @@ export async function fetchLeads(status?: string): Promise<Lead[]> {
       `SELECT phone, name, origin, course_interest, status, last_message,
               ${utmSourceSelect}, ${utmMediumSelect}, ${utmCampaignSelect},
               COALESCE(updated_at, NOW()) AS updated_at,
-              probeltec_synced_at
+              probeltec_synced_at, probeltec_status
        FROM leads
        ${where}
        ORDER BY
@@ -302,6 +303,7 @@ export interface FollowupLead {
   last_action: string | null;
   last_result: string | null;
   block_reason: string | null;
+  probeltec_status: string | null;
 }
 
 function getFollowupStatePath(): string {
@@ -319,7 +321,7 @@ export async function fetchFollowupLeads(statusFilter?: string): Promise<Followu
     
     // 1. Buscar leads base
     const leadsRes = await client.query(`
-      SELECT phone as lead_id, phone as phone_e164, email, name, status, origin as source_canon, utm_medium as media_canon, utm_source, utm_campaign
+      SELECT phone as lead_id, phone as phone_e164, email, name, status, origin as source_canon, utm_medium as media_canon, utm_source, utm_campaign, probeltec_status
       FROM leads
     `);
     
@@ -358,7 +360,8 @@ export async function fetchFollowupLeads(statusFilter?: string): Promise<Followu
         next_channel: null,
         last_action: null,
         last_result: null,
-        block_reason: null
+        block_reason: null,
+        probeltec_status: l.probeltec_status || null
       });
     }
 
